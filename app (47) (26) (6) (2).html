@@ -1,0 +1,2549 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>給与明細分類ツール</title>
+    <link rel="icon" href="data:,">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .chat-container {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            height: 500px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+        }
+        .message {
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .bot-message {
+            background-color: #f0f0f0;
+        }
+        .user-message {
+            background-color: #e3f2fd;
+            margin-left: 20%;
+        }
+        .upload-area {
+            border: 2px dashed #ccc;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .category {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .employeeNumber { background-color: #fff8e1; } /* 薄黄 */
+        .employeeNumber-btn { background-color: #ffc107; color: #333; }
+        .name { background-color: #f3e5f5; } /* 薄紫 */
+        .name-btn { background-color: #9c27b0; color: white; }
+        .attendance { background-color: #e8f5e9; }
+        .payment { background-color: #e3f2fd; }
+        .deduction { background-color: #ffebee; }
+        .socialInsurance { background-color: #e8eaf6; } /* 薄紫 */
+.socialInsurance-btn { background-color: #9c27b0; color: white; }
+.paymentTotal { background-color: #bbdefb; } /* 支給計 - 薄青 */
+.paymentTotal-btn { background-color: #1976d2; color: white; }
+.deductionTotal { background-color: #ffcdd2; } /* 控除計 - 薄赤 */
+.deductionTotal-btn { background-color: #d32f2f; color: white; }
+.netPayment { background-color: #c8e6c9; } /* 差引支給額 - 薄緑 */
+.netPayment-btn { background-color: #388e3c; color: white; }
+.employmentInsurance { background-color: #e1f5fe; } /* 薄青 */
+.employmentInsurance-btn { background-color: #ff69b4; color: white; } /* ピンク */
+.employmentInsurance-btn.unselected { background-color: #e1f5fe; color: #333; }
+.fixed-btn { 
+    background-color: #e0e0e0;
+    color: #333; 
+    padding: 6px 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.fixed-btn.selected {
+    background-color: #2196F3;
+    color: white;
+}
+.variable-btn { 
+    background-color: #e0e0e0;
+    color: #333;
+    padding: 6px 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.variable-btn.selected {
+    background-color: #f44336;
+    color: white;
+}
+        .taxable { background-color: #ffe0b2; } /* 薄橙 */
+.taxable-btn { background-color: #ff9800; color: white; }
+        .other { background-color: #f5f5f5; }
+        .category-btn {
+            padding: 6px 12px;
+            margin: 0 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .category-btn.unselected {
+            background-color: #e0e0e0;
+            color: #333;
+        }
+        .attendance-btn { background-color: #4CAF50; color: white; }
+        .payment-btn { background-color: #2196F3; color: white; }
+        .deduction-btn { background-color: #f44336; color: white; }
+        .other-btn { background-color: #FFEB3B; color: #333; }
+        
+    </style>
+</head>
+<body>
+    <h1>給与明細分類ツール</h1>
+    <div class="chat-container" id="chat">
+        <div class="message bot-message">給与データファイルをアップロードしてください</div>
+    </div>
+    <div class="upload-area" id="uploadArea">
+        <input type="file" id="fileInput" accept=".xlsx,.xls">
+        <p>Excelファイルをドラッグ＆ドロップまたはクリックして選択</p>
+    </div>
+
+    <script>
+        // Classification rules
+        const categories = {
+            employeeNumber: ['社員番号', '社員コード', 'スタッフコード', '社員ID', '従業員番号', '職員番号', '個人コード', 'スタッフ番号', '勤務者番号', 'ユーザー番号', 'NO', 'ＮＯ'],
+            name: ['氏名', '名前', '姓名', 'フルネーム', '姓', '名', '姓（漢字）', '名（漢字）', '姓（カナ）', '名（カナ）', '社員名', '従業員名', '職員名', 'スタッフ名'],
+            paymentTotal: ['支給計', '支給合計', '支給総額', '支給額計', '総支給額'],
+            deductionTotal: ['控除計', '控除合計', '控除総額', '控除額計'],
+            netPayment: ['差引支給額', '差引額', '支給差引額', '差額'],
+            attendance: ['出勤日数', '欠勤日数', '有休日数', '代休日数', '在宅勤務日数', '慶弔休暇', '出勤時間', '早朝就業1', '超過残業時間', '早朝就業2', '深夜勤務時間', '休日出勤時間', '休出日数', '特休日数', '有休残', '有休残時', '時間有休', '遲早時間', '普通残業', '(内)深夜残', '法定休日', '深夜残業', '休出残業', '残業予備', '代替休日', '時間代替', '代替休残', '代替振替', '特別休暇', '残業時間', '休出時間', '深夜時間', '遅早回数', '早出時間', '長期貸付 回数', '短期貸付 回数', '不足時間控除減額', '遅早控除減額', '遅早時間', '税手入力'].filter(item => 
+                !['支給計', '支給合計', '支給総額', '支給額計', '控除計', '控除合計', '控除総額', '控除額計', '差引支給額', '差引額', '支給差引額', '差額'].includes(item)
+            ),
+            payment: ['基本給', '手当', '残業手当', '役職手当', '調整給', '特別手当', '非税通勤費', '深夜勤務手当', '休日出勤手当', '早朝就業1', '超過残業手当', '早朝就業2', '(他手当1）', '(他手当2）', '他手当計', '光熱通信費補', '立替経費', '60時間超残業手当', '本給', '役員報酬', '加給', '奨励金', '休日出勤', '退職給付前払'].filter(item => 
+                !['支給計', '支給合計', '支給総額', '支給額計', '控除計', '控除合計', '控除総額', '控除額計', '差引支給額', '差引額', '支給差引額', '差額', '給与区分', '扶養人数'].includes(item)
+            ),
+            deduction: ['健康保険', '介護保険', '厚生年金', '雇用保険', '所得税', '住民税', 'その他控除', '食事代', '組合費', '長期貸付', '短期貸付', 'ゴルフ積立', '立替金', '役会費', '水交会', '住宅控除', '単独年調精算', '日本生命', '第一生命', '住友生命', 'アフラック', '道銀財形', '北洋財形', '住友財形', '明治財形', 'アイユー', 'パロス', '家賃', '前渡金'].filter(item => 
+                !['支給計', '支給合計', '支給総額', '支給額計', '控除計', '控除合計', '控除総額', '控除額計', '差引支給額', '差引額', '支給差引額', '差額', '給与区分', '扶養人数'].includes(item)
+            ),
+            socialInsurance: ['基本給', '手当', '残業手当', '役職手当', '調整給', '特別手当', '深夜勤務手当', '休日出勤手当', '超過残業手当', '光熱通信費補', '本給', '加給', '奨励金', '退職給付前払', '非税通勤費'].filter(item => 
+                !['立替経費', '支給計', '支給合計', '支給総額', '支給額計', '控除計', '控除合計', '控除総額', '控除額計', '差引支給額', '差引額', '支給差引額', '差額'].includes(item)
+            ),
+            employmentInsurance: ['基本給', '手当', '残業手当', '役職手当', '調整給', '特別手当', '深夜勤務手当', '休日出勤手当', '超過残業手当', '光熱通信費補', '本給', '加給', '奨励金', '退職給付前払', '非税通勤費'].filter(item =>
+                !['立替経費', '支給計', '支給合計', '支給総額', '支給額計', '控除計', '控除合計', '控除総額', '控除額計', '差引支給額', '差引額', '支給差引額', '差額'].includes(item)
+            ),
+            taxable: ['基本給', '手当', '残業手当', '役職手当', '調整給', '特別手当', '深夜勤務手当', '休日出勤手当', '超過残業手当', '光熱通信費補', '本給', '加給', '奨励金', '退職給付前払', '非税通勤費'].filter(item =>
+                !['立替経費', '支給計', '支給合計', '支給総額', '支給額計', '控除計', '控除合計', '控除総額', '控除額計', '差引支給額', '差引額', '支給差引額', '差額'].includes(item))
+        };
+
+        // 括弧処理関数
+        function normalizeItemName(itemName) {
+            const str = typeof itemName === 'string' ? itemName.trim() : String(itemName);
+            
+            // 項目全体が括弧で囲まれている場合（例：「(他手当1)」）はそのまま返す
+            if ((str.startsWith('（') && str.endsWith('）')) || 
+                (str.startsWith('(') && str.endsWith(')'))) {
+                return str;
+            }
+            
+            // 補足の括弧を除去（全角・半角の括弧とその中の内容を除去）
+            let normalized = str
+                .replace(/[（(][^）)]*[）)]/g, '') // 括弧とその中の内容を除去
+                .trim();
+            
+            // 括弧除去後に空になった場合は元の文字列を返す
+            return normalized || str;
+        }
+
+        // State management
+        let currentState = {
+            step: 0, // 0: upload, 1: edit, 2: confirm, 3: diff_check, 4: fixed_var_classify, 5: fixed_var_confirm
+            currentCategory: '',
+            classified: null,
+            multiCategoryMap: {}, // 項目が複数カテゴリに属する場合のマップ {item: [categories]}
+            confirmedItems: {},
+            checkboxStates: {}, // チェックボックス状態を保持 {category: {item: checked}}
+            fixedItems: [], // 固定項目として分類された支給項目
+            variableItems: [], // 変動項目として分類された支給項目
+            classificationStep: 0, // 0: initial, 1: confirmed
+            isVertical: false // データ形式: false=横型, true=縦型
+        };
+
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const chat = document.getElementById('chat');
+            chat.innerHTML += `<div class="message user-message">${file.name}をアップロードしました</div>`;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, {type: 'array'});
+                // Store original workbook for later download
+                currentState.originalWorkbook = workbook;
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                // 表示形式を保持するために raw: false を設定
+                const jsonData = XLSX.utils.sheet_to_json(firstSheet, {header: 1, raw: false});
+
+                // Detect orientation and find header row
+                let headerRow = [];
+                let isVertical = false;
+                
+                // Skip empty rows and find first non-empty row
+                // 説明文フィルタリング関数
+const isDescription = (str) => {
+  const s = String(str);
+  const techTerms = ['設定','表示','値','変更','項目','正しい','返す'];
+  return (
+    s.length >= 50 ||
+    (s.match(/[、。]/g) || []).length >= 2 ||
+    /(の|に|を|が|で|と|も)[^\s]{2,10}[る|う|た|い|だ]/.test(s) ||
+    techTerms.some(term => s.includes(term))
+  );
+};
+
+const nonEmptyData = jsonData
+  .map(row => row 
+    ? row.map(cell => {
+        const strVal = cell != null ? String(cell).trim() : '';
+        return strVal !== '' && 
+               !isDescription(strVal) && 
+               !['給与区分', '扶養人数'].includes(strVal) ? cell : null;
+      }).filter(cell => cell !== null)
+    : null
+  )
+  .filter(row => row && row.length > 0);
+                
+                // Check horizontal orientation (first non-empty row contains headers)
+                if (nonEmptyData.length > 0) {
+                    const firstRow = nonEmptyData[0] || [];
+                    if (firstRow.some(cell => 
+                        (typeof cell === 'string' || typeof cell === 'number') && 
+                        (String(cell).match(/社員(コード|番号|ID)/) || 
+                        String(cell).match(/従業員(コード|番号|ID)/) || 
+                        String(cell).match(/職員(コード|番号|ID)/) || 
+                        String(cell).match(/個人(コード|番号|ID)/) || 
+                        String(cell).match(/スタッフ(コード|番号|ID)/) || 
+                        String(cell).match(/勤務者(コード|番号|ID)/) || 
+                        String(cell).match(/ユーザー(コード|番号|ID)/) || 
+                        String(cell).includes('NO') || 
+                        String(cell).includes('ＮＯ')))) {
+                        headerRow = firstRow;
+                    }
+                    // Check vertical orientation (first non-empty column contains headers)
+                    else {
+                        for (let row of nonEmptyData) {
+                            // 給与項目から文章らしい要素を除外（10文字以上 or 句読点を含む or 助詞が含まれる）
+const isDescription = (str) => {
+  const s = String(str);
+  // 技術説明文の典型的なパターン
+  const techTerms = ['設定', '表示', '値', '変更', '使用', '項目', '正しい', '返す'];
+  return (
+    s.length >= 50 ||                              // 50文字以上
+    (s.match(/[、。]/g) || []).length >= 2 ||      // 句読点が2つ以上
+    /(の|に|を|が|で|と|も)[^\s]{2,10}[る|う|た|い|だ]/.test(s) ||  // 助詞＋動詞/形容詞
+    techTerms.some(term => s.includes(term))       // 技術用語を含む
+  );
+};
+const paymentTerms = ['基本給', '手当', '役職手当', '調整給', '特別手当', '残業手当']
+  .filter(term => !isDescription(term));
+                            if (row[0] && (typeof row[0] === 'string' || typeof row[0] === 'number') && 
+                                (String(row[0]).match(/社員(コード|番号|ID)/) || 
+                                String(row[0]).match(/従業員(コード|番号|ID)/) || 
+                                String(row[0]).match(/職員(コード|番号|ID)/) || 
+                                String(row[0]).match(/個人(コード|番号|ID)/) || 
+                                String(row[0]).match(/スタッフ(コード|番号|ID)/) || 
+                                String(row[0]).match(/勤務者(コード|番号|ID)/) || 
+                                String(row[0]).match(/ユーザー(コード|番号|ID)/) || 
+                                String(row[0]).includes('NO') || 
+                                String(row[0]).includes('ＮＯ') ||
+                                paymentTerms.some(term => String(row[0]).includes(term)) ||
+                                String(row[0]).includes('氏名') ||
+                                String(row[0]).includes('名前') ||
+                                String(row[0]).includes('保険') ||
+                                String(row[0]).includes('年金') ||
+                                String(row[0]).includes('計') ||
+                                String(row[0]).includes('額'))) {
+                                console.log("Vertical data detected in row:", row[0]);
+                                // 縦型データを横型に変換
+                                headerRow = nonEmptyData.map(row => row[0]);
+                                const transposedData = [];
+                                for (let col = 1; col < nonEmptyData[0].length; col++) {
+                                    transposedData.push(nonEmptyData.map(row => row[col]));
+                                }
+                                // 元データを転置したデータで上書き
+                                jsonData.length = 0;
+                                jsonData.push(headerRow, ...transposedData);
+                                // ヘッダー行から識別子を除外（社員番号とNOは除外しない）
+                                headerRow = headerRow.filter(item => {
+                                    if (!item) return false;
+                                    const skipTerms = ['社員コード', '個人コード'];
+                                    return !skipTerms.includes(String(item).trim());
+                                });
+                                isVertical = true;
+                                currentState.isVertical = true;
+                                console.log("Vertical data detected and flagged");
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (headerRow.length === 0) {
+                    chat.innerHTML += `<div class="message bot-message">エラー: 給与項目が見つかりませんでした</div>`;
+                    return;
+                }
+
+                console.log("Data orientation detected:", isVertical ? "Vertical" : "Horizontal");
+                console.log("Header row:", headerRow);
+                console.log("CurrentState.isVertical:", currentState.isVertical);
+
+                // Classify items with numbering and duplicate handling
+                currentState.classified = {};
+                currentState.itemNumbers = {}; // Store item numbers
+                currentState.duplicates = {}; // Track duplicates
+                
+                // First pass - assign numbers and find duplicates
+                headerRow.forEach((item, index) => {
+                    if (!item) return;
+                    
+                    if (!currentState.itemNumbers[item]) {
+                        currentState.itemNumbers[item] = index + 1; // 1-based numbering
+                    } else {
+                        if (!currentState.duplicates[item]) {
+                            currentState.duplicates[item] = [currentState.itemNumbers[item]];
+                        }
+                        currentState.duplicates[item].push(index + 1);
+                    }
+                });
+                
+                // Second pass - classify items
+                for (let item of headerRow) {
+                    if (!item) continue;
+                    
+                    // Skip already processed duplicates
+                    if (currentState.duplicates[item] && currentState.duplicates[item][0] !== currentState.itemNumbers[item]) {
+                        continue;
+                    }
+                    
+                    let found = false;
+                    
+                    // 小数点を含む数値データがある項目を勤怠項目として優先分類
+                    let hasDecimalNumbers = false;
+                    
+                    if (currentState.isVertical) {
+                        // 縦型データの場合
+                        const itemIndex = headerRow.indexOf(item);
+                        if (itemIndex !== -1 && jsonData.length > 1) {
+                            // 対応するデータ列を取得（ヘッダー行を除く）
+                            const dataColumn = [];
+                            for (let i = 1; i < jsonData.length; i++) {
+                                if (jsonData[i] && jsonData[i][itemIndex] !== undefined) {
+                                    dataColumn.push(jsonData[i][itemIndex]);
+                                }
+                            }
+                            
+                            // 小数点を含む数値データがあるかチェック
+                            hasDecimalNumbers = dataColumn.some(value => {
+                                if (value === null || value === undefined) return false;
+                                const strValue = String(value).trim();
+                                // 小数点を含み、数値として解釈できるかチェック
+                                const isDecimalFormat = /^\d+\.\d+$/.test(strValue);
+                                // 数値として解釈可能かチェック
+                                const isNumeric = !isNaN(parseFloat(strValue)) && isFinite(strValue);
+                                return isDecimalFormat && isNumeric;
+                            });
+                        }
+                    } else {
+                        // 横型データの場合
+                        const itemIndex = headerRow.indexOf(item);
+                        if (itemIndex !== -1 && nonEmptyData.length > 1) {
+                            // 対応するデータ列を取得（ヘッダー行を除く）
+                            const dataColumn = [];
+                            for (let i = 1; i < nonEmptyData.length; i++) {
+                                if (nonEmptyData[i] && nonEmptyData[i][itemIndex] !== undefined) {
+                                    dataColumn.push(nonEmptyData[i][itemIndex]);
+                                }
+                            }
+                            
+                            // 小数点を含む数値データがあるかチェック
+                            hasDecimalNumbers = dataColumn.some(value => {
+                                if (value === null || value === undefined) return false;
+                                const strValue = String(value).trim();
+                                // 小数点表記の数値かどうかをチェック（表示形式を考慮）
+                                // 例: "20.00", "22.5", "15.0" など
+                                const isDecimalFormat = /^\d+\.\d+$/.test(strValue);
+                                // 数値として解釈可能かチェック
+                                const isNumeric = !isNaN(parseFloat(strValue)) && isFinite(strValue);
+                                return isDecimalFormat && isNumeric;
+                            });
+                        }
+                    }
+                    
+                    if (hasDecimalNumbers) {
+                        if (!currentState.classified.attendance) currentState.classified.attendance = [];
+                        currentState.classified.attendance.push(item);
+                        console.log(`小数点を含む数値データを検出、勤怠項目として分類: ${item}`);
+                        found = true;
+                        continue; // 次の項目へ
+                    }
+                    
+                    // Check employeeNumber first
+                    if (categories.employeeNumber.some(keyword => {
+                        const isMatch = (typeof item === 'string' ? item.trim() : String(item)) === keyword.trim() || 
+                                      (typeof item === 'string' ? item.includes(keyword) : String(item).includes(keyword));
+                        // デバッグ: 「ＮＯ」のマッチングを確認
+                        if (keyword === 'ＮＯ' && isMatch) {
+                            console.log(`「ＮＯ」マッチング成功: item="${item}", keyword="${keyword}", isMatch=${isMatch}`);
+                        }
+                        return isMatch;
+                    })) {
+                        if (!currentState.classified.employeeNumber) currentState.classified.employeeNumber = [];
+                        currentState.classified.employeeNumber.push(item);
+                        console.log(`社員番号として分類: ${item}`);
+                        found = true;
+                    }
+                    // Check name second
+                    else if (categories.name.some(keyword => {
+                        const isMatch = (typeof item === 'string' ? item.trim() : String(item)) === keyword.trim() || 
+                                      (typeof item === 'string' ? item.includes(keyword) : String(item).includes(keyword));
+                        return isMatch;
+                    })) {
+                        if (!currentState.classified.name) currentState.classified.name = [];
+                        currentState.classified.name.push(item);
+                        found = true;
+                    }
+                    // Then check other priority categories
+                    const priorityCategories = ['paymentTotal', 'deductionTotal', 'netPayment', 'socialInsurance', 'employmentInsurance', 'taxable'];
+                    for (let category of priorityCategories) {
+                        if (categories[category].some(keyword => {
+                            const isMatch = (typeof item === 'string' ? item.trim() : String(item)) === keyword.trim() || 
+                                          (typeof item === 'string' ? item.includes(keyword) : String(item).includes(keyword));
+                            return isMatch;
+                        })) {
+                            // Special handling for deductionTotal: if both "控除合計" and "控除計" exist, only "控除合計" should be deductionTotal
+                            if (category === 'deductionTotal') {
+                                const isKoujoGoukei = (typeof item === 'string' ? item.trim() : String(item)) === '控除合計';
+                                const isKoujoKei = (typeof item === 'string' ? item.trim() : String(item)) === '控除計';
+                                
+                                // Check if both items exist in headerRow
+                                const hasKoujoGoukei = headerRow.some(headerItem => 
+                                    (typeof headerItem === 'string' ? headerItem.trim() : String(headerItem)) === '控除合計'
+                                );
+                                const hasKoujoKei = headerRow.some(headerItem => 
+                                    (typeof headerItem === 'string' ? headerItem.trim() : String(headerItem)) === '控除計'
+                                );
+                                
+                                if (hasKoujoGoukei && hasKoujoKei) {
+                                    // Both exist: only "控除合計" should be deductionTotal, "控除計" should be other
+                                    if (isKoujoGoukei) {
+                                        if (!currentState.multiCategoryMap[item]) currentState.multiCategoryMap[item] = [];
+                                        if (!currentState.multiCategoryMap[item].includes(category)) {
+                                            currentState.multiCategoryMap[item].push(category);
+                                        }
+                                        found = true;
+                                    } else if (isKoujoKei) {
+                                        // Add "控除計" to other category instead
+                                        if (!currentState.classified.other) currentState.classified.other = [];
+                                        currentState.classified.other.push(item);
+                                        found = true;
+                                    } else {
+                                        // Other deductionTotal items (like 控除総額, 控除額計) handled normally
+                                        if (!currentState.multiCategoryMap[item]) currentState.multiCategoryMap[item] = [];
+                                        if (!currentState.multiCategoryMap[item].includes(category)) {
+                                            currentState.multiCategoryMap[item].push(category);
+                                        }
+                                        found = true;
+                                    }
+                                } else {
+                                    // Only one or none exist: handle normally
+                                    if (!currentState.multiCategoryMap[item]) currentState.multiCategoryMap[item] = [];
+                                    if (!currentState.multiCategoryMap[item].includes(category)) {
+                                        currentState.multiCategoryMap[item].push(category);
+                                    }
+                                    found = true;
+                                }
+                            } else {
+                                // For other categories, handle normally
+                                if (!currentState.multiCategoryMap[item]) currentState.multiCategoryMap[item] = [];
+                                if (!currentState.multiCategoryMap[item].includes(category)) {
+                                    currentState.multiCategoryMap[item].push(category);
+                                }
+                                found = true;
+                            }
+                        }
+                    }
+
+                    // 特別ルール: 語尾による分類（_数字がある場合は前の文字列を判定）
+                    const itemStr = typeof item === 'string' ? item.trim() : String(item);
+                    const normalizedBaseItem = itemStr.split('_')[0]; // _より前を抽出
+                    const normalizedItem = normalizeItemName(normalizedBaseItem); // 括弧を除去して正規化
+                    
+                    // デバッグ: 項目名と正規化後の確認
+                    console.log(`分類処理: 元項目="${item}", 正規化後="${normalizedItem}"`);
+                    
+                    // 1. 「手当」を含む項目は「支給」（最優先）
+                    if (itemStr.includes('手当')) {
+                        if (!currentState.classified.payment) currentState.classified.payment = [];
+                        currentState.classified.payment.push(item);
+                        console.log(`「手当」を含む項目を支給に分類: ${item}`);
+                        found = true;
+                        continue; // 次の項目へ
+                    }
+                    // 2. 「休日出勤」は例外として支給項目
+                    else if (itemStr.includes('休日出勤')) {
+                        if (!currentState.classified.payment) currentState.classified.payment = [];
+                        currentState.classified.payment.push(item);
+                        console.log(`「休日出勤」を例外として支給に分類: ${item}`);
+                        found = true;
+                        continue; // 次の項目へ
+                    }
+                    // 3. 「休暇」または「休日」を含む項目は「勤怠」
+                    else if (itemStr.includes('休暇') || itemStr.includes('休日')) {
+                        if (!currentState.classified.attendance) currentState.classified.attendance = [];
+                        currentState.classified.attendance.push(item);
+                        console.log(`「休暇」または「休日」を含む項目を勤怠に分類: ${item}`);
+                        found = true;
+                        continue; // 次の項目へ
+                    }
+                    // 3. 「日当」で終わる項目は「支給」
+                    else if (normalizedItem.endsWith('日当')) {
+                        if (!currentState.classified.payment) currentState.classified.payment = [];
+                        currentState.classified.payment.push(item);
+                        console.log(`「日当」で終わる項目を支給に分類: ${item}`);
+                        found = true;
+                        continue; // 次の項目へ
+                    }
+                    // 4. 「前払金」で終わる項目は「支給」
+                    else if (normalizedItem.endsWith('前払金')) {
+                        if (!currentState.classified.payment) currentState.classified.payment = [];
+                        currentState.classified.payment.push(item);
+                        console.log(`「前払金」で終わる項目を支給に分類: ${item}`);
+                        found = true;
+                        continue; // 次の項目へ
+                    }
+                    // 5. 「合計」で終わる項目は「その他」ただし支給計/控除計/差引支給額は除外
+                    if (normalizedItem.endsWith('合計') && 
+                        !categories.paymentTotal.some(k => item.includes(k)) &&
+                        !categories.deductionTotal.some(k => item.includes(k)) &&
+                        !categories.netPayment.some(k => item.includes(k))) {
+                        if (!currentState.classified.other) currentState.classified.other = [];
+                        currentState.classified.other.push(item); // 元の項目名で保存
+                        found = true;
+                    }
+                    // 2. 「給」「掛金」で終わる項目は「支給」
+                    else if (normalizedItem.endsWith('給') || normalizedItem.endsWith('掛金')) {
+                        if (!currentState.classified.payment) currentState.classified.payment = [];
+                        currentState.classified.payment.push(item);
+                        found = true;
+                    }
+                    
+                    // 4. 「労働」で終わる項目は「勤怠」
+                    else if (normalizedItem.endsWith('労働')) {
+                        if (!currentState.classified.attendance) currentState.classified.attendance = [];
+                        currentState.classified.attendance.push(item);
+                        console.log(`「労働」語尾ルール適用: ${item} → 勤怠`);
+                        found = true;
+                    }
+                    // 5. 「日数」「時間」で終わる項目は「勤怠」
+                    else if (normalizedItem.endsWith('日数') || normalizedItem.endsWith('時間')) {
+                        if (!currentState.classified.attendance) currentState.classified.attendance = [];
+                        currentState.classified.attendance.push(item);
+                        console.log(`「日数/時間」語尾ルール適用: ${item} → 勤怠`);
+                        found = true;
+                    }
+                    // 6. 「残業」で終わる項目は「勤怠」（例外: 「深夜残業」は支給）
+                    else if (normalizedItem.endsWith('残業')) {
+                        if (normalizedItem.includes('深夜残業')) {
+                            // 例外: 深夜残業は支給項目
+                            if (!currentState.classified.payment) currentState.classified.payment = [];
+                            currentState.classified.payment.push(item);
+                            console.log(`「残業」語尾ルール適用(例外): ${item} → 支給`);
+                        } else {
+                            // その他の「残業」で終わる項目は勤怠
+                            if (!currentState.classified.attendance) currentState.classified.attendance = [];
+                            currentState.classified.attendance.push(item);
+                            console.log(`「残業」語尾ルール適用: ${item} → 勤怠`);
+                        }
+                        found = true;
+                    }
+                    // 7. 「保険」で終わる項目は「控除」
+                    else if (normalizedItem.endsWith('保険')) {
+                        if (!currentState.classified.deduction) currentState.classified.deduction = [];
+                        currentState.classified.deduction.push(item);
+                        console.log(`「保険」語尾ルール適用: ${item} → 控除`);
+                        found = true;
+                    }
+                    // 8. 「休日」で終わる項目は「勤怠」（例外: 「休日出勤」は支給）
+                    else if (normalizedItem.endsWith('休日')) {
+                        if (normalizedItem.includes('休日出勤')) {
+                            // 例外: 休日出勤は支給項目
+                            if (!currentState.classified.payment) currentState.classified.payment = [];
+                            currentState.classified.payment.push(item);
+                            console.log(`「休日」語尾ルール適用(例外): ${item} → 支給`);
+                        } else {
+                            // その他の「休日」で終わる項目は勤怠
+                            if (!currentState.classified.attendance) currentState.classified.attendance = [];
+                            currentState.classified.attendance.push(item);
+                            console.log(`「休日」語尾ルール適用: ${item} → 勤怠`);
+                        }
+                        found = true;
+                    }
+                    // 9. 「控除」で終わる項目の処理
+                    else if (normalizedItem.endsWith('控除')) {
+                        const specialDeductions = [
+                            '不足時間控除', '早退控除', 
+                            '遅刻控除', '休職控除', '育児休業控除'
+                        ];
+                        
+                        const paymentExceptions = [
+                            '遅早欠勤控除', '欠勤控除', '遅早控除'
+                        ];
+                        if (paymentExceptions.includes(normalizedItem)) {
+                            // 例外: 支給項目として分類
+                            if (!currentState.classified.payment) currentState.classified.payment = [];
+                            currentState.classified.payment.push(item);
+                        } else if (specialDeductions.includes(normalizedItem)) {
+                            // 特別控除は支給・社会保険・課税対象として分類
+                            if (!currentState.multiCategoryMap[item]) currentState.multiCategoryMap[item] = [];
+                            currentState.multiCategoryMap[item].push('payment', 'socialInsurance', 'taxable');
+                        } else {
+                            // 通常の控除項目
+                            if (!currentState.classified.deduction) currentState.classified.deduction = [];
+                            currentState.classified.deduction.push(item);
+                        }
+                        found = true;
+                    }
+                    // 7. 「回数」で終わる項目は勤怠
+                    else if (normalizedItem.endsWith('回数')) {
+                        if (!currentState.classified.attendance) currentState.classified.attendance = [];
+                        currentState.classified.attendance.push(item);
+                        found = true;
+                    }
+                    // 8. 「使用料」を含む項目は控除
+                    else if (itemStr.includes('使用料')) {
+                        if (!currentState.classified.deduction) currentState.classified.deduction = [];
+                        currentState.classified.deduction.push(item);
+                        console.log(`「使用料」項目を控除に分類: ${item}`);
+                        found = true;
+                    }
+                    // 9. 「通勤」を含む項目は支給項目
+                    else if (normalizedItem.includes('通勤')) {
+                        if (!currentState.classified.payment) currentState.classified.payment = [];
+                        currentState.classified.payment.push(item);
+                        console.log(`「通勤」を含む項目を支給に分類: ${item}`);
+                        found = true;
+                    }
+                    // 10. 「費」で終わる項目は控除（例外: 「通勤費」は支給）
+                    else if (normalizedItem.endsWith('費')) {
+                        if (normalizedItem.includes('通勤費')) {
+                            // 例外: 通勤費は支給項目
+                            if (!currentState.classified.payment) currentState.classified.payment = [];
+                            currentState.classified.payment.push(item);
+                        } else {
+                            // その他の「費」で終わる項目は控除
+                            if (!currentState.classified.deduction) currentState.classified.deduction = [];
+                            currentState.classified.deduction.push(item);
+                        }
+                        found = true;
+                    }
+                    // 10. 「累計」で終わる or 「事業主」を含む項目は「その他」(支給計/控除計/差引支給額は除外)
+                    else if ((normalizedItem.endsWith('累計') || itemStr.includes('事業主')) &&
+                        !categories.paymentTotal.some(k => item.includes(k)) &&
+                        !categories.deductionTotal.some(k => item.includes(k)) &&
+                        !categories.netPayment.some(k => item.includes(k))) {
+                        if (!currentState.classified.other) currentState.classified.other = [];
+                        currentState.classified.other.push(item);
+                        found = true;
+                    }
+                    // 通常カテゴリの処理
+                    else {
+                        for (let [category, keywords] of Object.entries(categories)) {
+                            if (priorityCategories.includes(category)) continue;
+                            if (keywords.some(keyword => {
+                                const isMatch = itemStr === keyword.trim() || itemStr.includes(keyword);
+                                return isMatch;
+                            })) {
+                                if (!currentState.classified[category]) currentState.classified[category] = [];
+                                currentState.classified[category].push(item);
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found) {
+                            if (item === '遅早時間') {
+                                if (!currentState.classified.attendance) currentState.classified.attendance = [];
+                                currentState.classified.attendance.push(item);
+                                console.log('「遅早時間」を勤怠項目に強制分類');
+                            } else {
+                                const itemStrForCheck = typeof item === 'string' ? item : String(item);
+                                const isSpecialCategory = categories.paymentTotal.some(k => itemStrForCheck.includes(k)) ||
+                       categories.deductionTotal.some(k => itemStrForCheck.includes(k)) ||
+                       categories.netPayment.some(k => itemStrForCheck.includes(k));
+if (!isSpecialCategory) {
+    if (!currentState.classified.other) currentState.classified.other = [];
+    currentState.classified.other.push(item);
+}
+                            }
+                        }
+                    }
+                }
+
+                // 支給項目を自動的に社会保険・雇用保険・課税対象項目に追加
+                if (currentState.classified.payment) {
+                    currentState.classified.payment.forEach(paymentItem => {
+                        // 社会保険対象項目に追加
+                        if (!currentState.multiCategoryMap[paymentItem]) {
+                            currentState.multiCategoryMap[paymentItem] = [];
+                        }
+                        if (!currentState.multiCategoryMap[paymentItem].includes('socialInsurance')) {
+                            currentState.multiCategoryMap[paymentItem].push('socialInsurance');
+                        }
+                        
+                        // 雇用保険対象項目に追加
+                        if (!currentState.multiCategoryMap[paymentItem].includes('employmentInsurance')) {
+                            currentState.multiCategoryMap[paymentItem].push('employmentInsurance');
+                        }
+                        
+                        // 課税対象項目に追加
+                        if (!currentState.multiCategoryMap[paymentItem].includes('taxable')) {
+                            currentState.multiCategoryMap[paymentItem].push('taxable');
+                        }
+                    });
+                    console.log('支給項目を社会保険・雇用保険・課税対象項目に自動追加:', currentState.classified.payment);
+                }
+
+                // Start with employeeNumber category first
+                if (currentState.classified.employeeNumber && currentState.classified.employeeNumber.length > 0) {
+                    startCategoryConfirmation('employeeNumber');
+                } else {
+                    startCategoryConfirmation('attendance');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        function startCategoryConfirmation(category) {
+            currentState.currentCategory = category;
+            currentState.step = 1;
+            showEditStep(category);
+        }
+
+        function showEditStep(category) {
+            const chat = document.getElementById('chat');
+            // Combine items from classified and multiCategoryMap
+            let items = [
+                ...(currentState.classified[category] || []),
+                ...(Object.entries(currentState.multiCategoryMap)
+                    .filter(([item, categories]) => categories.includes(category))
+                    .map(([item]) => item))
+            ];
+
+            // 社会保険/雇用保険/課税対象画面では、再分類された支給項目も含める
+            if (['socialInsurance', 'employmentInsurance', 'taxable'].includes(category)) {
+                // 支給項目として分類された項目を追加（再分類された項目を含む）
+                const paymentItems = [
+                    ...(currentState.confirmedItems.payment || []),
+                    ...(Object.entries(currentState.checkboxStates.other || {})
+                        .filter(([item, cat]) => cat === 'payment')
+                        .map(([item]) => item))
+                ];
+                
+                // 現在のカテゴリにまだ含まれていない支給項目を追加
+                paymentItems.forEach(item => {
+                    if (!items.includes(item)) {
+                        items.push(item);
+                    }
+                });
+            }
+            
+            // デバッグ: 控除カテゴリの項目を確認
+            if (category === 'deduction') {
+                console.log('控除カテゴリの項目:', currentState.classified.deduction);
+                console.log('マルチカテゴリマップ:', currentState.multiCategoryMap);
+            }
+            
+            // For "other" category, also include unchecked items from other categories
+            if (category === 'other') {
+                const otherCategories = ['attendance', 'payment', 'deduction'];
+                otherCategories.forEach(otherCat => {
+                    if (currentState.classified[otherCat]) {
+                        currentState.classified[otherCat].forEach(item => {
+                            if (!currentState.checkboxStates[otherCat]?.[item]) {
+                                // 既にitem|number形式で確定済みの場合はスキップ
+                                const isConfirmed = currentState.confirmedItems[otherCat]?.some(confirmedItem => 
+                                    confirmedItem.startsWith(`${item}|`)
+                                );
+                                if (!isConfirmed && !items.includes(item)) {
+                                    items.push(item);
+                                }
+                            }
+                        });
+                    }
+                });
+            }
+            
+            // Initialize checkbox states if not exists
+if (!currentState.checkboxStates[category]) {
+    currentState.checkboxStates[category] = {};
+    items.forEach(item => {
+        // For duplicate items, use full identifier (item|number)
+if (currentState.duplicates[item]) {
+    currentState.duplicates[item].forEach(number => {
+        currentState.checkboxStates[category][`${item}|${number}`] = 'other'; // 初期状態を「その他」に設定
+    });
+} else {
+    currentState.checkboxStates[category][item] = category === 'other' ? 'other' : true;
+}
+    });
+}
+
+let checkboxesHTML = '';
+if (category === 'other') {
+    checkboxesHTML = items.map(item => {
+        if (currentState.duplicates[item]) {
+            // 重複項目は番号ごとに個別表示
+            return currentState.duplicates[item].map(number => `
+                <div style="display: flex; align-items: center; margin: 10px 0;">
+                    <span style="flex-grow: 1;">${item} NO.${number}</span>
+                    <span style="color: red; font-weight: bold; margin-left: 10px;">＜重複＞</span>
+                    <button class="category-btn attendance-btn ${(currentState.checkboxStates[category][`${item}|${number}`] || currentState.checkboxStates[category][item]) !== 'attendance' ? 'unselected' : ''}" 
+                            onclick="setCategory(this, '${item}|${number}', 'attendance')">勤怠</button>
+                    <button class="category-btn payment-btn ${(currentState.checkboxStates[category][`${item}|${number}`] || currentState.checkboxStates[category][item]) !== 'payment' ? 'unselected' : ''}" 
+                            onclick="setCategory(this, '${item}|${number}', 'payment')">支給</button>
+                    <button class="category-btn deduction-btn ${(currentState.checkboxStates[category][`${item}|${number}`] || currentState.checkboxStates[category][item]) !== 'deduction' ? 'unselected' : ''}" 
+                            onclick="setCategory(this, '${item}|${number}', 'deduction')">控除</button>
+                    
+                    
+                    
+                    <button class="category-btn other-btn ${(currentState.checkboxStates[category][`${item}|${number}`] || currentState.checkboxStates[category][item]) !== 'other' ? 'unselected' : ''}" 
+                            onclick="setCategory(this, '${item}|${number}', 'other')">その他</button>
+                </div>
+            `).join('');
+        }
+        // 他カテゴリでチェック外されたか判定
+function isUncheckedInOtherCategories(item) {
+    const otherCategories = ['attendance', 'payment', 'deduction'].filter(cat => cat !== currentState.currentCategory);
+    return otherCategories.some(cat => currentState.classified[cat]?.includes(item) && !currentState.checkboxStates[cat]?.[item]);
+}
+
+// 通常項目
+        return `
+        <div style="display: flex; align-items: center; margin: 10px 0;">
+            <span style="flex-grow: 1;">${item}</span>
+            ${isUncheckedInOtherCategories(item) ? '<span style="color: #FFA500; font-weight: bold; margin-left: 10px;">＜他カテゴリで除外＞</span>' : ''}
+            <button class="category-btn attendance-btn ${currentState.checkboxStates[category][item] !== 'attendance' ? 'unselected' : ''}" 
+                    onclick="setCategory(this, '${item}', 'attendance')">勤怠</button>
+            <button class="category-btn payment-btn ${currentState.checkboxStates[category][item] !== 'payment' ? 'unselected' : ''}" 
+                    onclick="setCategory(this, '${item}', 'payment')">支給</button>
+            <button class="category-btn deduction-btn ${currentState.checkboxStates[category][item] !== 'deduction' ? 'unselected' : ''}" 
+                    onclick="setCategory(this, '${item}', 'deduction')">控除</button>
+            <button class="category-btn other-btn ${currentState.checkboxStates[category][item] !== 'other' ? 'unselected' : ''}" 
+                    onclick="setCategory(this, '${item}', 'other')">その他</button>
+        </div>
+        `;
+    }).join('');
+} else if (category === 'socialInsurance' || category === 'employmentInsurance' || category === 'taxable') {
+    // Initialize category if not exists
+    if (!currentState.checkboxStates[category]) {
+        currentState.checkboxStates[category] = {};
+    }
+    
+    // Show payment items and special deductions (including reclassified items)
+    const paymentItems = [
+        ...(currentState.confirmedItems.payment || []),
+        ...(Object.entries(currentState.checkboxStates.other || {})
+            .filter(([item, cat]) => cat === 'payment')
+            .map(([item]) => item)),
+        ...(Object.keys(currentState.multiCategoryMap).filter(item => 
+            currentState.multiCategoryMap[item].includes('payment') &&
+            ['不足時間控除', '不足時間控除', '早退控除', '遅刻控除'].includes(item.split('_')[0])
+        ))
+    ];
+    checkboxesHTML = paymentItems.map(item => {
+        // 社員番号と氏名カテゴリは重複項目も表示する
+        if (currentState.duplicates[item] && !['employeeNumber', 'name'].includes(category)) return '';
+        
+        // Set initial state: true if item belongs to this category (including reclassified items)
+        if (currentState.checkboxStates[category][item] === undefined) {
+            currentState.checkboxStates[category][item] = 
+                currentState.multiCategoryMap[item]?.includes(category) || 
+                (currentState.checkboxStates.other?.[item] === category) || 
+                false;
+        }
+        return `
+        <label style="display: block; margin: 5px 0;">
+            <input type="checkbox" 
+                   ${currentState.checkboxStates[category][item] ? 'checked' : ''}
+                   value="${item}"> ${item}
+        </label>
+        `;
+    }).join('');
+} else {
+    checkboxesHTML = items.map(item => {
+        // 社員番号と氏名カテゴリは重複項目も表示する
+        if (currentState.duplicates[item] && !['employeeNumber', 'name'].includes(category)) return '';
+        const isDetailItem = /^[（(][^）)\s][^）)]*[）)]$/.test(item);
+        return `
+        <label style="display: block; margin: 5px 0;">
+            <input type="checkbox" 
+                   ${currentState.checkboxStates[category][item] ? 'checked' : ''}
+                   value="${item}"> ${item}${isDetailItem ? ' <内訳に分類>' : ''}
+        </label>
+        `;
+    }).join('');
+}
+
+            const [message1, message2] = getCategoryMessage(category);
+chat.innerHTML += `
+                <div class="message bot-message">
+                    <p>${message1}</p>
+                    <p>${message2}</p>
+                    <div style="margin: 10px 0;">${checkboxesHTML}</div>
+                </div>
+                <div style="text-align: center; margin: 20px 0;">
+                    <button id="completeBtn" style="padding: 8px 16px; background: #4CAF50; color: white; border: none; border-radius: 4px;">完了</button>
+                </div>
+            `;
+
+            // Remove any existing event listeners first
+const completeBtn = document.getElementById('completeBtn');
+const newCompleteBtn = completeBtn.cloneNode(true);
+completeBtn.parentNode.replaceChild(newCompleteBtn, completeBtn);
+
+newCompleteBtn.addEventListener('click', function() {
+    // Store selection states
+if (category === 'other') {
+    currentState.confirmedItems[category] = [];
+    for (const [item, selectedCategory] of Object.entries(currentState.checkboxStates[category])) {
+        // 再分類された項目はotherに含めない（multiCategoryMapを参照）
+        const reclassifiedCategory = currentState.multiCategoryMap[item]?.[0];
+        if (selectedCategory === category && (!reclassifiedCategory || reclassifiedCategory === 'other')) {
+            if (item.includes('|')) {
+                currentState.confirmedItems[category].push(item);
+            } else if (currentState.duplicates[item]) {
+                currentState.duplicates[item].forEach(number => {
+                    currentState.confirmedItems[category].push(`${item}|${number}`);
+                });
+            } else {
+                currentState.confirmedItems[category].push(item);
+            }
+        }
+    }
+    // 中間確認画面へ遷移（otherカテゴリ専用）
+    showOtherIntermediateConfirm();
+    return;
+} else {
+    const checkboxes = document.querySelectorAll('#chat input[type="checkbox"]');
+    checkboxes.forEach(cb => {
+        currentState.checkboxStates[category][cb.value] = cb.checked;
+    });
+    // Ensure no duplicates when confirming items
+    const newConfirmedItems = Array.from(checkboxes)
+        .filter(cb => cb.checked)
+        .map(cb => cb.value);
+    currentState.confirmedItems[category] = [...new Set([
+        ...(currentState.confirmedItems[category] || []),
+        ...newConfirmedItems
+    ])];
+}
+    
+    // カテゴリが空の場合は確認画面をスキップして次のカテゴリに進む
+    if ((currentState.confirmedItems[category] || []).length === 0) {
+        // Clear chat container except first two messages (upload and file info)
+        const chat = document.getElementById('chat');
+        const messages = chat.querySelectorAll('.message');
+        if (messages.length > 2) {
+            for (let i = 2; i < messages.length; i++) {
+                chat.removeChild(messages[i]);
+            }
+        }
+        
+        // Remove any existing buttons
+        const buttons = chat.querySelectorAll('button');
+        buttons.forEach(btn => btn.remove());
+        
+        // 次のカテゴリに自動的に進む
+        const nextCategory = getNextCategory(category);
+        if (nextCategory) {
+            startCategoryConfirmation(nextCategory);
+        } else if (category === 'taxable') {
+            showFixedVariableClassification();
+        } else {
+            showFinalResult();
+        }
+        return;
+    }
+    
+    // Clear chat container except first two messages (upload and file info)
+    const chat = document.getElementById('chat');
+    const messages = chat.querySelectorAll('.message');
+    if (messages.length > 2) {
+        for (let i = 2; i < messages.length; i++) {
+            chat.removeChild(messages[i]);
+        }
+    }
+    
+    // Remove any existing buttons
+    const buttons = chat.querySelectorAll('button');
+    buttons.forEach(btn => btn.remove());
+    
+    showConfirmStep(category);
+});
+        }
+
+        function showConfirmStep(category) {
+            currentState.step = 2;
+            const chat = document.getElementById('chat');
+            // 全項目を取得（複数カテゴリ対応）
+const items = currentState.confirmedItems[category] || [];
+            
+            let confirmedItemsHTML = '';
+if (category === 'other') {
+    confirmedItemsHTML = items.map(item => {
+        // 複数カテゴリを取得
+        const categories = currentState.multiCategoryMap[item] || [];
+        const categoryNames = categories.map(cat => getCategoryName(cat)).join(', ');
+
+        // item|number形式の場合は個別表示
+        if (item.includes('|')) {
+            const [baseItem, number] = item.split('|');
+            return `
+                <div style="display: flex; align-items: center; margin: 10px 0;">
+                    <span style="flex-grow: 1;">${baseItem} NO.${number}</span>
+                    <span style="color: #666; margin-left: 10px;">${categoryNames}</span>
+                </div>
+            `;
+        }
+        
+        // 重複項目
+        if (currentState.duplicates[item]) {
+            return currentState.duplicates[item].map(number => `
+                <div style="display: flex; align-items: center; margin: 10px 0;">
+                    <span style="flex-grow: 1;">${item} NO.${number}</span>
+                    <span style="color: #666; margin-left: 10px;">
+                        ${categoryNames}
+                    </span>
+                </div>
+            `).join('');
+        }
+        
+        // 通常項目
+        return `
+        <div style="display: flex; align-items: center; margin: 10px 0;">
+            <span style="flex-grow: 1;">${item}</span>
+            <span style="color: #666; margin-left: 10px;">
+                ${categoryNames}
+            </span>
+        </div>
+        `;
+    }).join('');
+    
+    // Also include items that were moved to other categories
+    const movedItems = [];
+    for (const [item, selectedCategory] of Object.entries(currentState.checkboxStates[category])) {
+        if (selectedCategory !== 'other' && selectedCategory !== category) {
+            movedItems.push({item, category: selectedCategory});
+        }
+    }
+    
+    if (movedItems.length > 0) {
+        confirmedItemsHTML += movedItems.map(({item, category}) => `
+            <div style="display: flex; align-items: center; margin: 10px 0;">
+                <span style="flex-grow: 1;">${item}</span>
+                <span style="color: #666; margin-left: 10px;">
+                    ${getCategoryName(category)}
+                </span>
+            </div>
+        `).join('');
+    }
+} else {
+    // 通常カテゴリ（勤怠/支給/控除/社会保険/課税対象）ではカテゴリ名を表示しない
+    confirmedItemsHTML = items.map(item => `
+        <div style="display: flex; align-items: center; margin: 10px 0;">
+            <span style="flex-grow: 1;">${item}</span>
+        </div>
+    `).join('');
+}
+
+            chat.innerHTML += `
+                <div class="message bot-message">
+                    <p>これで問題はありませんか？</p>
+                    ${category === 'socialInsurance' ? '<p><strong>社会保険項目</strong></p>' : 
+                     category === 'taxable' ? '<p><strong>課税対象項目</strong></p>' : 
+                     category === 'name' ? '<p><strong>氏名</strong></p>' :
+                     category === 'paymentTotal' ? '<p><strong>支給計</strong></p>' :
+                     category === 'deductionTotal' ? '<p><strong>控除計</strong></p>' :
+                     category === 'netPayment' ? '<p><strong>差引支給額</strong></p>' :
+                     category === 'other' ? '' : `<p><strong>${getCategoryName(category)}</strong></p>`}
+                    <div style="margin: 10px 0;">${confirmedItemsHTML}</div>
+                </div>
+                <div style="text-align: center; margin: 20px 0;">
+                    <button id="confirmBtn" style="padding: 8px 16px; background: #4CAF50; color: white; border: none; border-radius: 4px; margin-right: 10px;">確認完了</button>
+                    <button id="modifyBtn" style="padding: 8px 16px; background: #f44336; color: white; border: none; border-radius: 4px;">修正</button>
+                </div>
+            `;
+
+            const confirmBtn = document.getElementById('confirmBtn');
+const modifyBtn = document.getElementById('modifyBtn');
+
+if (confirmBtn) {
+    confirmBtn.replaceWith(confirmBtn.cloneNode(true));
+    document.getElementById('confirmBtn').addEventListener('click', function() {
+        // Move to next category
+        const nextCategory = getNextCategory(category);
+        if (nextCategory) {
+            startCategoryConfirmation(nextCategory);
+        } else if (category === 'taxable') {
+            // After tax confirmation, show fixed/variable classification
+            showFixedVariableClassification();
+        } else {
+            // All other categories done
+            showFinalResult();
+        }
+    });
+}
+
+if (modifyBtn) {
+    modifyBtn.replaceWith(modifyBtn.cloneNode(true));
+    document.getElementById('modifyBtn').addEventListener('click', function() {
+        // 直前の確認メッセージを削除
+        const chat = document.getElementById('chat');
+        const messages = chat.querySelectorAll('.message');
+        if (messages.length > 2) {
+            for (let i = messages.length - 1; i >= 2; i--) {
+                if (messages[i].classList.contains('bot-message') && 
+                    messages[i].textContent.includes('問題はありませんか')) {
+                    chat.removeChild(messages[i]);
+                    break;
+                }
+            }
+        }
+        showEditStep(category);
+    });
+}
+        }
+
+        function showOtherIntermediateConfirm() {
+            currentState.step = 2.5; // intermediate confirmation state for other category
+            const chat = document.getElementById('chat');
+            
+            // Clear chat container except first two messages (upload and file info)
+            const messages = chat.querySelectorAll('.message');
+            if (messages.length > 2) {
+                for (let i = 2; i < messages.length; i++) {
+                    chat.removeChild(messages[i]);
+                }
+            }
+            
+            // Remove any existing buttons
+            const buttons = chat.querySelectorAll('button');
+            buttons.forEach(btn => btn.remove());
+            
+            // Get confirmed items for other category
+            const items = currentState.confirmedItems['other'] || [];
+            
+            let confirmedItemsHTML = '';
+            if (items.length > 0) {
+                confirmedItemsHTML = items.map(item => {
+                    // 複数カテゴリを取得
+                    const categories = currentState.multiCategoryMap[item] || [];
+                    const categoryNames = categories.map(cat => getCategoryName(cat)).join(', ');
+
+                    // item|number形式の場合は個別表示
+                    if (item.includes('|')) {
+                        const [baseItem, number] = item.split('|');
+                        return `
+                            <div style="display: flex; align-items: center; margin: 10px 0;">
+                                <span style="flex-grow: 1;">${baseItem} NO.${number}</span>
+                                <span style="color: #666; margin-left: 10px;">${categoryNames}</span>
+                            </div>
+                        `;
+                    }
+                    
+                    // 重複項目
+                    if (currentState.duplicates[item]) {
+                        return currentState.duplicates[item].map(number => `
+                            <div style="display: flex; align-items: center; margin: 10px 0;">
+                                <span style="flex-grow: 1;">${item} NO.${number}</span>
+                                <span style="color: #666; margin-left: 10px;">
+                                    ${categoryNames}
+                                </span>
+                            </div>
+                        `).join('');
+                    }
+                    
+                    // 通常項目
+                    return `
+                    <div style="display: flex; align-items: center; margin: 10px 0;">
+                        <span style="flex-grow: 1;">${item}</span>
+                        <span style="color: #666; margin-left: 10px;">
+                            ${categoryNames}
+                        </span>
+                    </div>
+                    `;
+                }).join('');
+            } else {
+                confirmedItemsHTML = '<p>該当項目はありません</p>';
+            }
+            
+            // Also include items that were moved to other categories from other
+            const movedItems = [];
+            for (const [item, selectedCategory] of Object.entries(currentState.checkboxStates['other'])) {
+                if (selectedCategory !== 'other' && selectedCategory !== 'other') {
+                    movedItems.push({item, category: selectedCategory});
+                }
+            }
+            
+            if (movedItems.length > 0) {
+                confirmedItemsHTML += movedItems.map(({item, category}) => `
+                    <div style="display: flex; align-items: center; margin: 10px 0;">
+                        <span style="flex-grow: 1;">${item}</span>
+                        <span style="color: #666; margin-left: 10px;">
+                            ${getCategoryName(category)}
+                        </span>
+                    </div>
+                `).join('');
+            }
+
+            chat.innerHTML += `
+                <div class="message bot-message">
+                    <p>これで問題はありませんか？</p>
+                    <div style="margin: 10px 0;">${confirmedItemsHTML}</div>
+                </div>
+                <div style="text-align: center; margin: 20px 0;">
+                    <button id="confirmBtn" style="padding: 8px 16px; background: #4CAF50; color: white; border: none; border-radius: 4px; margin-right: 10px;">確認完了</button>
+                    <button id="modifyBtn" style="padding: 8px 16px; background: #f44336; color: white; border: none; border-radius: 4px;">修正</button>
+                </div>
+            `;
+
+            // Remove any existing event listeners first
+            const confirmBtn = document.getElementById('confirmBtn');
+            const newConfirmBtn = confirmBtn.cloneNode(true);
+            confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+            
+            const modifyBtn = document.getElementById('modifyBtn');
+            const newModifyBtn = modifyBtn.cloneNode(true);
+            modifyBtn.parentNode.replaceChild(newModifyBtn, modifyBtn);
+
+            newConfirmBtn.addEventListener('click', function() {
+                // Proceed to diff check screen
+                showDiffCheckScreen();
+            });
+
+            newModifyBtn.addEventListener('click', function() {
+                // 直前の確認メッセージを削除
+                const chat = document.getElementById('chat');
+                const messages = chat.querySelectorAll('.message');
+                if (messages.length > 2) {
+                    for (let i = messages.length - 1; i >= 2; i--) {
+                        if (messages[i].classList.contains('bot-message') && 
+                            messages[i].textContent.includes('問題はありませんか')) {
+                            chat.removeChild(messages[i]);
+                            break;
+                        }
+                    }
+                }
+                showEditStep('other');
+            });
+        }
+
+        function getNextCategory(currentCategory) {
+            const order = [
+                'employeeNumber', 
+                'name', 
+                'attendance', 
+                'payment', 
+                'paymentTotal',  // 支給計
+                'deduction', 
+                'deductionTotal',  // 控除計
+                'netPayment',     // 差引支給額
+                'other', 
+                'socialInsurance', 
+                'employmentInsurance', 
+                'taxable'
+            ];
+            const currentIndex = order.indexOf(currentCategory);
+            return order[currentIndex + 1];
+        }
+
+        function showFinalResult() {
+            const chat = document.getElementById('chat');
+            // Prepare display data including all categories
+            const displayData = {
+                attendance: { title: '勤怠項目', items: currentState.confirmedItems.attendance || [], class: 'attendance' },
+                payment: { title: '支給項目', items: currentState.confirmedItems.payment || [], class: 'payment' },
+                deduction: { title: '控除項目', items: currentState.confirmedItems.deduction || [], class: 'deduction' },
+                other: { title: 'その他', items: currentState.confirmedItems.other || [], class: 'other' }
+            };
+
+            let resultHTML = `<div class="message bot-message">すべての項目の確認が完了しました
+                ${Object.entries(displayData).map(([key, {title, items, class: className}]) => `
+                    <div class="category ${className}" style="margin-top: 15px;">
+                        <h3>${title}</h3>
+                        <div>${items.length > 0 ? items.map(item => `
+                            <div style="margin: 5px 0; padding-left: 10px;">${item}</div>
+                        `).join('') : '<div style="color: #999; padding-left: 10px;">該当項目なし</div>'}
+                        </div>
+                    </div>
+                `).join('')}
+                <div style="text-align: center; margin: 20px 0;">
+                    <button id="downloadBtn" style="padding: 8px 16px; background: #2196F3; color: white; border: none; border-radius: 4px;">Excelでダウンロード</button>
+                </div>
+            </div>`;
+        
+        // Add event listener for download button
+        setTimeout(() => {
+            document.getElementById('downloadBtn').addEventListener('click', () => {
+                // Prepare data for three separate sheets
+                const sheet1Data = [['勤怠項目', '支給項目', '控除項目', '雇用保険対象', 'その他']];
+                const sheet2Data = [['社会保険項目', '非社会保険項目']];
+                const sheet3Data = [['課税対象項目', '非課税対象項目']];
+
+                // 表示用と同じカテゴリデータを取得 (重複登録を防ぐ)
+                const displayCategories = {};
+                // まずconfirmedItemsから登録
+                for (const [category, items] of Object.entries(currentState.confirmedItems)) {
+                    displayCategories[category] = [...items];
+                }
+                // otherカテゴリから再分類された項目を追加 (重複チェック)
+                if (currentState.checkboxStates.other) {
+                    for (const [item, category] of Object.entries(currentState.checkboxStates.other)) {
+                        if (category !== 'other') {
+                            // 既にconfirmedItemsに登録されていない場合のみ追加
+                            if (!currentState.confirmedItems[category]?.includes(item)) {
+                                if (!displayCategories[category]) displayCategories[category] = [];
+                                displayCategories[category].push(item);
+                            }
+                        }
+                    }
+                }
+
+                // Sheet 1: 分類(勤怠支給控除その他)
+                const maxLength1 = Math.max(
+                    displayCategories.attendance?.length || 0,
+                    displayCategories.payment?.length || 0,
+                    displayCategories.deduction?.length || 0,
+                    displayCategories.other?.length || 0
+                );
+                for (let i = 0; i < maxLength1; i++) {
+                    const item = displayCategories.attendance?.[i] || 
+                                displayCategories.payment?.[i] || 
+                                displayCategories.deduction?.[i] || 
+                                displayCategories.other?.[i] || '';
+                    sheet1Data.push([
+                        displayCategories.attendance?.[i] || '',
+                        displayCategories.payment?.[i] || '',
+                        displayCategories.deduction?.[i] || '',
+                        displayCategories.employmentInsurance?.includes(item) ? '〇' : '',
+                        displayCategories.other?.[i] || ''
+                    ]);
+                }
+
+                // Sheet 2 & 3: 社会保険/課税対象 (重複なしで明示的に分類された項目のみ〇をつける)
+                const uniqueItems = [...new Set([
+                    ...(displayCategories.attendance || []),
+                    ...(displayCategories.payment || []),
+                    ...(displayCategories.deduction || []),
+                    ...(displayCategories.other || [])
+                ])];
+                
+                // 明示的に分類された項目のみ取得
+                const socialInsuranceItems = new Set(
+                    Object.entries(currentState.multiCategoryMap)
+                        .filter(([item, categories]) => 
+                            categories.includes('socialInsurance') && 
+                            (currentState.confirmedItems.socialInsurance?.includes(item) ||
+                             currentState.checkboxStates.socialInsurance?.[item] === true)
+                        )
+                        .map(([item]) => item)
+                );
+                
+                const taxableItems = new Set(
+                    Object.entries(currentState.multiCategoryMap)
+                        .filter(([item, categories]) => 
+                            categories.includes('taxable') && 
+                            (currentState.confirmedItems.taxable?.includes(item) ||
+                             currentState.checkboxStates.taxable?.[item] === true)
+                        )
+                        .map(([item]) => item)
+                );
+
+                // シートデータ生成 (重複なし) - デバッグ用ログ追加
+                console.log('Social Insurance Items:', socialInsuranceItems);
+                console.log('Taxable Items:', taxableItems);
+                
+                uniqueItems.forEach(item => {
+                    const isSocialIns = socialInsuranceItems.has(item);
+                    const isTaxable = taxableItems.has(item);
+                    
+                    // デバッグ用：分類されていないのに〇がつく項目をチェック
+                    if ((isSocialIns || isTaxable) && 
+                        !currentState.multiCategoryMap[item]?.includes('socialInsurance') && 
+                        !currentState.multiCategoryMap[item]?.includes('taxable')) {
+                        console.warn('Invalid classification detected:', item, {
+                            socialInsurance: isSocialIns,
+                            taxable: isTaxable,
+                            multiCategoryMap: currentState.multiCategoryMap[item]
+                        });
+                    }
+
+                    sheet2Data.push([item, isSocialIns ? '〇' : '']);
+                    sheet3Data.push([item, isTaxable ? '〇' : '']);
+                });
+
+                // Prepare single sheet data with all required columns
+                const allItems = [...uniqueItems]; // uniqueItemsを再利用
+                
+                // Create combined data with numbering
+                const combinedData = [
+                    // Header row with company name
+                    [{
+                        v: "[○○株式会社様]賃金・給与日数項目の確認",
+                        t: "s",
+                        s: {
+                            font: { bold: true },
+                            alignment: { horizontal: "center" }
+                        }
+                    }],
+                    // Column headers
+                    ["NO.", "項目名", "項目分類", "固定/変動", "内訳項目", "社会保険対象", "雇用保険対象", "課税対象"]
+                ];
+
+                // Add data rows
+                allItems.forEach((item, index) => {
+                    const isSocialInsurance = socialInsuranceItems.has(item);
+                    const isTaxable = taxableItems.has(item);
+                    
+                    // Determine category (including reclassified items)
+                    let category = '';
+                    
+                    // First check confirmedItems
+                    if (currentState.confirmedItems.attendance?.includes(item)) category = '勤怠';
+                    else if (currentState.confirmedItems.payment?.includes(item)) category = '支給';
+                    else if (currentState.confirmedItems.deduction?.includes(item)) category = '控除';
+                    else if (currentState.confirmedItems.other?.includes(item)) category = 'その他';
+                    
+                    // Then check reclassified items from checkboxStates.other
+                    else if (currentState.checkboxStates.other?.[item] === 'attendance') category = '勤怠';
+                    else if (currentState.checkboxStates.other?.[item] === 'payment') category = '支給';
+                    else if (currentState.checkboxStates.other?.[item] === 'deduction') category = '控除';
+                    
+                    // Finally fall back to displayCategories
+                    else if (displayCategories.attendance?.includes(item)) category = '勤怠';
+                    else if (displayCategories.payment?.includes(item)) category = '支給';
+                    else if (displayCategories.deduction?.includes(item)) category = '控除';
+                    else if (displayCategories.other?.includes(item)) category = 'その他';
+
+                    combinedData.push([
+                        index + 1, // NO.
+                        item, // 項目名
+                        category, // 項目分類
+                        '', // 固定/変動 (初期値空欄)
+                        (/^[（(][^）)\s][^）)]*[）)]$/.test(item)) ? '〇' : '', // 内訳項目（項目全体が括弧で囲まれ、中身が空でない場合）
+                        isSocialInsurance ? '〇' : '', // 社会保険対象
+                        (displayCategories.employmentInsurance?.includes(item) || currentState.checkboxStates.employmentInsurance?.[item] === true) ? '〇' : '', // 雇用保険対象
+                        isTaxable ? '〇' : ''  // 課税対象
+                    ]);
+                });
+
+                // Create workbook with single sheet
+                const wb = XLSX.utils.book_new();
+                const ws = XLSX.utils.aoa_to_sheet(combinedData);
+                
+                // Style header row (2nd row) with navy background and white text
+                for (let C = 0; C < combinedData[0].length; ++C) {
+                    const cell_ref = XLSX.utils.encode_cell({c:C, r:1});
+                    ws[cell_ref].s = {
+                        fill: {fgColor: {rgb: "003366"}},
+                        font: {color: {rgb: "FFFFFF"}, bold: true},
+                        alignment: {horizontal: "center"}
+                    };
+                }
+                
+                // Set column widths to auto
+                ws['!cols'] = Array(8).fill({wch: 15});
+                
+                // Add borders to all cells
+                const range = XLSX.utils.decode_range(ws['!ref']);
+                for (let R = range.s.r; R <= range.e.r; ++R) {
+                    for (let C = range.s.c; C <= range.e.c; ++C) {
+                        const cell_address = {c:C, r:R};
+                        const cell_ref = XLSX.utils.encode_cell(cell_address);
+                        if (!ws[cell_ref]) continue;
+                        ws[cell_ref].s = ws[cell_ref].s || {};
+                        ws[cell_ref].s.border = {
+                            top: {style: "thin"},
+                            left: {style: "thin"},
+                            bottom: {style: "thin"},
+                            right: {style: "thin"}
+                        };
+                    }
+                }
+
+                XLSX.utils.book_append_sheet(wb, ws, "給与明細分類結果");
+                XLSX.writeFile(wb, "給与明細分類結果.xlsx");
+            });
+        }, 100);
+            
+            // 全カテゴリ項目を表示（通常項目 + 再分類項目を統合）
+            const displayCategories = {...currentState.confirmedItems};
+            
+            // 再分類項目を対応するカテゴリに追加
+            if (currentState.checkboxStates.other) {
+                for (const [item, category] of Object.entries(currentState.checkboxStates.other)) {
+                    if (category !== 'other') {
+                        if (!displayCategories[category]) displayCategories[category] = [];
+                        if (!displayCategories[category].includes(item)) {
+                            displayCategories[category].push(item);
+                        }
+                    }
+                }
+            }
+            
+            // 支給項目と控除項目の純粋性を保証（キーワードチェック）
+            if (displayCategories.payment) {
+                displayCategories.payment = displayCategories.payment.filter(item => 
+                    categories.payment.some(keyword => item.includes(keyword)) ||
+                    currentState.checkboxStates.other?.[item] === 'payment'
+                );
+            }
+            if (displayCategories.deduction) {
+                displayCategories.deduction = displayCategories.deduction.filter(item => 
+                    categories.deduction.some(keyword => item.includes(keyword)) ||
+                    currentState.checkboxStates.other?.[item] === 'deduction'
+                );
+            }
+            
+            // カテゴリごとに表示
+            for (let [category, items] of Object.entries(displayCategories)) {
+                if (items.length > 0) {
+                    resultHTML += `
+                        <div class="category ${category}">
+                            <strong>${getCategoryName(category)}</strong><br>
+                            ${items.map(item => {
+                                let warning = '';
+                                let numbers = '';
+                                if (currentState.duplicates[item]) {
+                                    return currentState.duplicates[item].map(number => 
+                                        `${item} NO.${number} ＜重複＞`
+                                    ).join(', ');
+                                }
+                                return item;
+                            }).join(', ')}
+                        </div>`;
+                }
+            }
+            
+            chat.innerHTML += resultHTML;
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        function setCategory(button, item, selectedCategory) {
+            const category = currentState.currentCategory;
+            
+            // Initialize multiCategoryMap if not exists
+            if (!currentState.multiCategoryMap[item]) {
+                currentState.multiCategoryMap[item] = [];
+            }
+            
+            // For 'other' category, make selection exclusive
+            if (category === 'other') {
+                // Reset all buttons to unselected
+                const buttons = button.parentElement.querySelectorAll('.category-btn');
+                buttons.forEach(btn => btn.classList.add('unselected'));
+                
+                // Clear previous selections
+                currentState.multiCategoryMap[item] = [];
+                
+                // Add new selection
+                button.classList.remove('unselected');
+                currentState.multiCategoryMap[item].push(selectedCategory);
+                
+                // Update checkboxStates.other to reflect the reclassification
+                currentState.checkboxStates[category][item] = selectedCategory;
+            } else {
+                // Original toggle logic for other categories
+                const index = currentState.multiCategoryMap[item].indexOf(selectedCategory);
+                if (index >= 0) {
+                    button.classList.add('unselected');
+                    currentState.multiCategoryMap[item].splice(index, 1);
+                } else {
+                    button.classList.remove('unselected');
+                    currentState.multiCategoryMap[item].push(selectedCategory);
+                }
+            }
+            
+            // Update confirmed items for all categories
+            Object.keys(currentState.confirmedItems).forEach(cat => {
+                currentState.confirmedItems[cat] = currentState.confirmedItems[cat]
+                    .filter(i => i !== item);
+            });
+            
+            currentState.multiCategoryMap[item].forEach(cat => {
+                if (!currentState.confirmedItems[cat]) {
+                    currentState.confirmedItems[cat] = [];
+                }
+                currentState.confirmedItems[cat].push(item);
+            });
+
+            // 支給項目に再分類された場合、自動的に社会保険/雇用保険/課税対象も付与
+            if (selectedCategory === 'payment') {
+                const additionalCategories = ['socialInsurance', 'employmentInsurance', 'taxable'];
+                additionalCategories.forEach(addCat => {
+                    if (!currentState.multiCategoryMap[item].includes(addCat)) {
+                        currentState.multiCategoryMap[item].push(addCat);
+                        if (!currentState.confirmedItems[addCat]) {
+                            currentState.confirmedItems[addCat] = [];
+                        }
+                        if (!currentState.confirmedItems[addCat].includes(item)) {
+                            currentState.confirmedItems[addCat].push(item);
+                        }
+                    }
+                });
+            }
+        }
+
+        function getCategoryName(category) {
+            return {
+                attendance: '勤怠',
+                payment: '支給',
+                deduction: '控除',
+                socialInsurance: '社会保険',
+                employmentInsurance: '雇用保険',
+                taxable: '課税対象',
+                other: 'その他',
+                employeeNumber: '社員番号',
+                name: '氏名',
+                paymentTotal: '支給計',
+                deductionTotal: '控除計',
+                netPayment: '差引支給額'
+            }[category];
+        }
+
+        function getCategoryMessage(category) {
+            return category === 'other' 
+                ? ['以下の項目は該当がありませんでした。', '誤りがある場合は当てはまる項目分類を選んでください']
+                : category === 'employeeNumber' ? ['以下の項目が社員番号として分類されました。', 'チェック項目に誤りや漏れはないですか？'] :
+                category === 'name' ? ['以下の項目が氏名として分類されました。', 'チェック項目に誤りや漏れはないですか？'] :
+                category === 'paymentTotal' ? ['以下の項目が支給計として分類されました。', 'チェック項目に誤りや漏れはないですか？'] :
+                category === 'deductionTotal' ? ['以下の項目が控除計として分類されました。', 'チェック項目に誤りや漏れはないですか？'] :
+                category === 'netPayment' ? ['以下の項目が差引支給額として分類されました。', 'チェック項目に誤りや漏れはないですか？'] :
+                category === 'socialInsurance' ? ['以下の項目が社会保険項目として分類されました。', 'チェック項目に誤りや漏れはないですか？'] :
+                category === 'employmentInsurance' ? ['以下の項目が雇用保険対象項目として分類されました。', 'チェック項目に誤りや漏れはないですか？'] :
+                category === 'taxable' ? ['以下の項目が課税対象項目として分類されました。', 'チェック項目に誤りや漏れはないですか？'] :
+                [`以下の項目が${getCategoryName(category)}項目として分類されました。`, 'チェック項目に誤りや漏れはないですか？'];
+        }
+
+        function showDiffCheckScreen() {
+            currentState.step = 3; // diff_check state
+            const chat = document.getElementById('chat');
+            chat.innerHTML = `
+                <div class="message bot-message">差分を確認し，項目を確定してください</div>
+                <div class="message bot-message">
+                    <h3>確定済み給与項目一覧</h3>
+                    ${Object.entries(currentState.confirmedItems).map(([category, items]) => `
+                        <div class="category ${category}">
+                            <h4>${getCategoryName(category)}</h4>
+                            <ul>
+                                ${items.map(item => `<li>${item}</li>`).join('')}
+                            </ul>
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="message bot-message" style="text-align: center;">
+                    <button id="downloadExcel" class="category-btn" style="background-color: #2196F3; color: white; margin: 5px;">Excelダウンロード</button>
+                </div>
+                <div class="message bot-message" style="text-align: center;">
+                    <button id="confirmBtn" class="category-btn" style="background-color: #4CAF50; color: white; margin: 5px;">確定</button>
+                    <button id="correctBtn" class="category-btn" style="background-color: #F44336; color: white; margin: 5px;">修正</button>
+                </div>
+            `;
+
+            document.getElementById('downloadExcel').addEventListener('click', downloadExcel);
+            document.getElementById('confirmBtn').addEventListener('click', () => {
+                startCategoryConfirmation('socialInsurance');
+            });
+            document.getElementById('correctBtn').addEventListener('click', () => {
+                startCategoryConfirmation('attendance');
+            });
+        }
+
+        function showFixedVariableClassification() {
+            currentState.step = 4; // fixed_var_classify state
+            const chat = document.getElementById('chat');
+            const paymentItems = currentState.confirmedItems.payment || [];
+            
+            // AIによる初期分類
+            const fixedItemsByAI = ['基本給', '手当', '光熱通信費補', '特別手当', '役職手当', '調整給'];
+            paymentItems.forEach(item => {
+                if (fixedItemsByAI.includes(item)) {
+                    if (!currentState.fixedItems.includes(item)) {
+                        currentState.fixedItems.push(item);
+                    }
+                    currentState.variableItems = currentState.variableItems.filter(i => i !== item);
+                } else {
+                    if (!currentState.variableItems.includes(item)) {
+                        currentState.variableItems.push(item);
+                    }
+                    currentState.fixedItems = currentState.fixedItems.filter(i => i !== item);
+                }
+            });
+            
+            chat.innerHTML = `
+                <div class="message bot-message">変動・固定項目を確認してください。</div>
+                <div class="message bot-message">
+                    <table style="width:100%; border-collapse: collapse;">
+                        ${paymentItems.map(item => `
+                            <tr>
+                                <td style="padding:8px; border-bottom:1px solid #ddd;">${item}</td>
+                                <td style="padding:8px; border-bottom:1px solid #ddd; text-align:center;">
+                                    <button class="fixed-btn ${currentState.fixedItems.includes(item) ? 'selected' : 'unselected'}" 
+                                            data-item="${item}">固定</button>
+                                </td>
+                                <td style="padding:8px; border-bottom:1px solid #ddd; text-align:center;">
+                                    <button class="variable-btn ${currentState.variableItems.includes(item) ? 'selected' : 'unselected'}" 
+                                            data-item="${item}">変動</button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </table>
+                </div>
+                <div class="message bot-message" style="text-align: center;">
+                    <button id="completeBtn" class="category-btn" style="background-color: #4CAF50; color: white; margin: 5px;">完了</button>
+                </div>
+            `;
+
+            // Add button event listeners
+            document.querySelectorAll('.fixed-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const item = e.target.dataset.item;
+                    if (!currentState.fixedItems.includes(item)) {
+                        currentState.fixedItems.push(item);
+                        currentState.variableItems = currentState.variableItems.filter(i => i !== item);
+                        e.target.classList.add('selected');
+                        e.target.parentElement.nextElementSibling.querySelector('.variable-btn').classList.remove('selected');
+                    }
+                });
+            });
+
+            document.querySelectorAll('.variable-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const item = e.target.dataset.item;
+                    if (!currentState.variableItems.includes(item)) {
+                        currentState.variableItems.push(item);
+                        currentState.fixedItems = currentState.fixedItems.filter(i => i !== item);
+                        e.target.classList.add('selected');
+                        e.target.parentElement.previousElementSibling.querySelector('.fixed-btn').classList.remove('selected');
+                    }
+                });
+            });
+
+            document.getElementById('completeBtn').addEventListener('click', showFixedVariableConfirmation);
+        }
+
+        function showFixedVariableConfirmation() {
+            currentState.step = 5; // fixed_var_confirm state
+            const chat = document.getElementById('chat');
+            
+            chat.innerHTML = `
+                <div class="message bot-message">これで問題はありませんか？</div>
+                <div class="message bot-message">
+                    <table style="width:100%; border-collapse: collapse;">
+                        ${currentState.confirmedItems.payment.map(item => `
+                            <tr>
+                                <td style="padding:8px; border-bottom:1px solid #ddd;">${item}</td>
+                                <td style="padding:8px; border-bottom:1px solid #ddd;">
+                                    ${currentState.fixedItems.includes(item) ? '固定' : '変動'}
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </table>
+                </div>
+                <div class="message bot-message" style="text-align: center;">
+                    <button id="finalConfirmBtn" class="category-btn" style="background-color: #4CAF50; color: white; margin: 5px;">確認完了</button>
+                    <button id="modifyBtn" class="category-btn" style="background-color: #F44336; color: white; margin: 5px;">修正</button>
+                </div>
+            `;
+
+            document.getElementById('finalConfirmBtn').addEventListener('click', () => {
+                currentState.classificationStep = 1;
+                showFinalCompletionScreen();
+            });
+
+            document.getElementById('modifyBtn').addEventListener('click', showFixedVariableClassification);
+        }
+
+        function showFinalCompletionScreen() {
+            currentState.step = 6; // final completion state
+            const chat = document.getElementById('chat');
+            
+            chat.innerHTML = `
+                <div class="message bot-message">すべての項目の確認が完了しました</div>
+                <div class="message bot-message">
+                    <h3>確定済み給与項目一覧</h3>
+                    ${Object.entries(currentState.confirmedItems).map(([category, items]) => `
+                        <div class="category ${category}">
+                            <h4>${getCategoryName(category)}</h4>
+                            <ul>
+                                ${items.map(item => `<li>${item}${category === 'payment' ? ` (${currentState.fixedItems.includes(item) ? '固定' : '変動'})` : ''}</li>`).join('')}
+                            </ul>
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="message bot-message" style="text-align: center;">
+                    <button id="downloadExcel" class="category-btn" style="background-color: #2196F3; color: white; margin: 5px;">Excelダウンロード</button>
+                </div>
+            `;
+
+            document.getElementById('downloadExcel').addEventListener('click', downloadExcel);
+        }
+
+        function downloadExcel() {
+            // カンマ付き文字列を数値に変換する関数
+            function toNumber(str) {
+                if (typeof str === 'number') return str;
+                if (typeof str !== 'string') return 0;
+                return parseFloat(str.replace(/,/g, '')) || 0;
+            }
+            
+            try {
+                console.log("Download Excel function called");
+                if (!currentState.originalWorkbook) {
+                    alert('エラー: アップロードされたファイルが見つかりません');
+                    return;
+                }
+
+            // 最終確認画面ではフォーマット済みExcelを返す
+            if (currentState.step === 6) {
+                const workbook = XLSX.utils.book_new();
+                
+                // ヘッダー行作成
+                const header1 = [["[○○株式会社様]賃金・給与日数項目の確認"]];
+                const header2 = [["NO.", "項目名", "項目分類", "固定/変動", "内訳項目", "社会保険対象", "雇用保険対象", "課税対象"]];
+                
+                // データ行作成
+                const dataRows = [];
+                let itemNumber = 1;
+                
+                // 社員番号項目を特定
+                const employeeNumberItem = Object.entries(currentState.confirmedItems)
+                    .find(([category, items]) => category === 'employeeNumber')?.[1]?.[0];
+                
+                // 全項目を取得（社員番号の次から順に）
+                const allItems = [];
+                const originalSheet = currentState.originalWorkbook.Sheets[currentState.originalWorkbook.SheetNames[0]];
+                const sheetData = XLSX.utils.sheet_to_json(originalSheet, {header: 1, defval: ""});
+                
+                if (currentState.isVertical) {
+                    // 縦型データの場合: 1列目のすべての行から項目名を取得（空白を除く）
+                    for (let i = 0; i < sheetData.length; i++) {
+                        if (sheetData[i] && sheetData[i][0] && String(sheetData[i][0]).trim() !== '') {
+                            allItems.push(String(sheetData[i][0]).trim());
+                        }
+                    }
+                } else {
+                    // 横型データの場合: 従来のロジック
+                    const headers = sheetData[0];
+                    if (employeeNumberItem) {
+                        const employeeNumberIndex = headers.indexOf(employeeNumberItem);
+                        if (employeeNumberIndex >= 0) {
+                            for (let i = employeeNumberIndex; i < headers.length; i++) {
+                                const item = headers[i];
+                                if (item) allItems.push(item);
+                            }
+                        }
+                    } else {
+                        allItems.push(...headers.filter(item => item));
+                    }
+                }
+                
+                // 重複項目のカテゴリマッピング情報を準備（差分用Excelと同じロジック）
+                const duplicateCategoryMap = {};
+                const duplicatePositionMap = {}; // 項目ごとの出現位置を追跡
+                if (currentState.duplicates) {
+                    for (const [item, numbers] of Object.entries(currentState.duplicates)) {
+                        duplicatePositionMap[item] = 0; // 各項目の出現カウンターを初期化
+                        numbers.forEach((number, idx) => {
+                            const duplicateKey = `${item}|${number}`;
+
+                            // confirmedItemsから検索
+                            for (const [category, items] of Object.entries(currentState.confirmedItems)) {
+                                if (items.includes(duplicateKey)) {
+                                    duplicateCategoryMap[duplicateKey] = category;
+                                    return;
+                                }
+                            }
+
+                            // checkboxStates.otherから再分類情報を検索
+                            if (currentState.checkboxStates.other && currentState.checkboxStates.other[duplicateKey] && 
+                                currentState.checkboxStates.other[duplicateKey] !== 'other') {
+                                duplicateCategoryMap[duplicateKey] = currentState.checkboxStates.other[duplicateKey];
+                            }
+                        });
+                    }
+                }
+
+                // データ行を生成（差分用Excelと同じカテゴリ決定ロジック）
+                allItems.forEach(item => {
+                    // 項目分類を取得
+                    let foundCategory = null;
+
+                    // まずconfirmedItemsから検索
+                    for (const [category, items] of Object.entries(currentState.confirmedItems)) {
+                        if (items.includes(item)) {
+                            foundCategory = category;
+                            break;
+                        }
+                    }
+
+                    // confirmedItemsに見つからなかった場合、checkboxStates.otherから再分類情報を検索
+                    if (!foundCategory && currentState.checkboxStates.other) {
+                        for (const [otherItem, reclassifiedCategory] of Object.entries(currentState.checkboxStates.other)) {
+                            if (otherItem === item && reclassifiedCategory !== 'other') {
+                                foundCategory = reclassifiedCategory;
+                                break;
+                            }
+                        }
+                    }
+
+                    // 重複項目の場合、位置に基づいてカテゴリを割り当て
+                    if (!foundCategory && currentState.duplicates && currentState.duplicates[item]) {
+                        const itemNumbers = currentState.duplicates[item];
+                        // 正確な出現位置を使用
+                        const itemPosition = duplicatePositionMap[item]++;
+                        
+                        if (itemPosition >= 0 && itemPosition < itemNumbers.length) {
+                            const duplicateKey = `${item}|${itemNumbers[itemPosition]}`;
+                            foundCategory = duplicateCategoryMap[duplicateKey];
+                        }
+                    }
+
+                    const category = foundCategory ? getCategoryName(foundCategory) : '';
+                    
+                    // 固定/変動を取得
+                    let fixedVariable = '';
+                    if (currentState.fixedItems.includes(item)) {
+                        fixedVariable = '固定';
+                    } else if (currentState.variableItems.includes(item)) {
+                        fixedVariable = '変動';
+                    }
+                    
+                    // 内訳項目かどうか
+                    const isBreakdown = /^[（(][^）)\s][^）)]*[）)]$/.test(item) ? '〇' : '';
+                    
+                    // 保険・課税対象かどうか（再分類情報も考慮）
+                    const isSocialInsurance = (currentState.confirmedItems.socialInsurance?.includes(item) || 
+                                             (currentState.checkboxStates.other && currentState.checkboxStates.other[item] === 'socialInsurance')) ? '〇' : '';
+                    const isEmploymentInsurance = (currentState.confirmedItems.employmentInsurance?.includes(item) || 
+                                                  (currentState.checkboxStates.other && currentState.checkboxStates.other[item] === 'employmentInsurance')) ? '〇' : '';
+                    const isTaxable = (currentState.confirmedItems.taxable?.includes(item) || 
+                                      (currentState.checkboxStates.other && currentState.checkboxStates.other[item] === 'taxable')) ? '〇' : '';
+                    
+                    dataRows.push([
+                        itemNumber++,
+                        item,
+                        category,
+                        fixedVariable,
+                        isBreakdown,
+                        isSocialInsurance,
+                        isEmploymentInsurance,
+                        isTaxable
+                    ]);
+                });
+                
+                // シートにデータを追加
+                const ws = XLSX.utils.aoa_to_sheet([...header1, ...header2, ...dataRows]);
+                
+                // スタイル設定
+                ws['!cols'] = [
+                    {wch: 5},  // NO.
+                    {wch: 20}, // 項目名
+                    {wch: 10}, // 項目分類
+                    {wch: 10}, // 固定/変動
+                    {wch: 10}, // 内訳項目
+                    {wch: 15}, // 社会保険対象
+                    {wch: 15}, // 雇用保険対象
+                    {wch: 10}  // 課税対象
+                ];
+                
+                // ヘッダー行を太字・中央揃えに
+                ws['A1'].s = {font: {bold: true}, alignment: {horizontal: 'center'}};
+                ws['!merges'] = [{s: {r: 0, c: 0}, e: {r: 0, c: 7}}];
+                
+                // 罫線設定
+                const range = XLSX.utils.decode_range(ws['!ref']);
+                for (let R = 1; R <= range.e.r; ++R) {
+                    for (let C = range.s.c; C <= range.e.c; ++C) {
+                        const cell = XLSX.utils.encode_cell({r: R, c: C});
+                        ws[cell].s = {border: {
+                            top: {style: 'thin'},
+                            left: {style: 'thin'},
+                            bottom: {style: 'thin'},
+                            right: {style: 'thin'}
+                        }};
+                    }
+                }
+                
+                XLSX.utils.book_append_sheet(workbook, ws, "給与項目一覧");
+                XLSX.writeFile(workbook, "給与項目確認一覧.xlsx");
+                return;
+            }
+
+            // ワークブックをコピー
+            const workbook = XLSX.utils.book_new();
+            const originalSheet = currentState.originalWorkbook.Sheets[currentState.originalWorkbook.SheetNames[0]];
+            const sheetData = XLSX.utils.sheet_to_json(originalSheet, {header: 1, defval: ""});
+
+            // ヘッダー行に新しい列を追加
+            const headerRow = sheetData[0];
+            const categoryRow = new Array(headerRow.length).fill("");
+
+            // 重複項目のカテゴリマッピング情報を準備
+            const duplicateCategoryMap = {};
+            const duplicatePositionMap = {}; // 項目ごとの出現位置を追跡
+            if (currentState.duplicates) {
+                for (const [item, numbers] of Object.entries(currentState.duplicates)) {
+                    duplicatePositionMap[item] = 0; // 各項目の出現カウンターを初期化
+                    numbers.forEach((number, idx) => {
+                        const duplicateKey = `${item}|${number}`;
+                        
+                        // confirmedItemsから検索
+                        for (const [category, items] of Object.entries(currentState.confirmedItems)) {
+                            if (items.includes(duplicateKey)) {
+                                duplicateCategoryMap[duplicateKey] = category;
+                                return;
+                            }
+                        }
+                        
+                        // checkboxStates.otherから再分類情報を検索
+                        if (currentState.checkboxStates.other && currentState.checkboxStates.other[duplicateKey] && 
+                            currentState.checkboxStates.other[duplicateKey] !== 'other') {
+                            duplicateCategoryMap[duplicateKey] = currentState.checkboxStates.other[duplicateKey];
+                        }
+                    });
+                }
+            }
+
+            // 各項目のカテゴリをマッピング（重複項目と再分類情報も反映）
+            headerRow.forEach((item, index) => {
+                let foundCategory = null;
+                
+                // まずconfirmedItemsから検索
+                for (const [category, items] of Object.entries(currentState.confirmedItems)) {
+                    if (items.includes(item)) {
+                        foundCategory = category;
+                        break;
+                    }
+                }
+                
+                // confirmedItemsに見つからなかった場合、checkboxStates.otherから再分類情報を検索
+                if (!foundCategory && currentState.checkboxStates.other) {
+                    for (const [otherItem, reclassifiedCategory] of Object.entries(currentState.checkboxStates.other)) {
+                        if (otherItem === item && reclassifiedCategory !== 'other') {
+                            foundCategory = reclassifiedCategory;
+                            break;
+                        }
+                    }
+                }
+                
+                // 重複項目の場合、位置に基づいてカテゴリを割り当て
+                if (!foundCategory && currentState.duplicates && currentState.duplicates[item]) {
+                    const itemNumbers = currentState.duplicates[item];
+                    // 正確な出現位置を使用
+                    const itemPosition = duplicatePositionMap[item]++;
+                    
+                    if (itemPosition >= 0 && itemPosition < itemNumbers.length) {
+                        const duplicateKey = `${item}|${itemNumbers[itemPosition]}`;
+                        foundCategory = duplicateCategoryMap[duplicateKey];
+                    }
+                }
+                
+                if (foundCategory) {
+                    categoryRow[index] = getCategoryName(foundCategory);
+                }
+            });
+
+            // カテゴリ行をデータに挿入
+            sheetData.unshift(categoryRow);
+            
+            // 給与項目全体を特定（支給/控除関連の項目）
+            const paymentKeywords = ["基本給", "手当", "残業手当", "役職手当", "調整給", "特別手当"];
+            const deductionKeywords = ["健康保険", "厚生年金", "雇用保険", "所得税", "住民税"];
+
+            if (currentState.isVertical) {
+                console.log("=== VERTICAL DATA PROCESSING STARTED ===");
+                console.log("Processing vertical data format - currentState.isVertical is true");
+                console.log("Starting vertical data processing with confirmedItems:", currentState.confirmedItems);
+                console.log("Sheet names:", currentState.originalWorkbook.SheetNames);
+                try {
+                    console.log("=== VERTICAL PROCESSING TRY BLOCK START ===");
+                    // 縦型データの場合: 元の縦型データを処理
+                    // まず元の縦型データを取得（transpose前のデータ）
+                    const originalSheet = currentState.originalWorkbook.Sheets[currentState.originalWorkbook.SheetNames[0]];
+                    if (!originalSheet) {
+                        throw new Error("Original sheet not found");
+                    }
+                    
+                    const originalData = XLSX.utils.sheet_to_json(originalSheet, {header: 1, defval: ""});
+                    console.log("Original vertical data:", originalData);
+                    console.log("Original data length:", originalData.length);
+                    
+                    if (!originalData || originalData.length === 0) {
+                        throw new Error("No data found in original sheet");
+                    }
+                
+                // 説明文フィルタリング関数（元のロジックを使用）
+                const isDescription = (str) => {
+                    const s = String(str);
+                    const techTerms = ['設定','表示','値','変更','項目','正しい','返す'];
+                    return (
+                        s.length >= 50 ||
+                        (s.match(/[、。]/g) || []).length >= 2 ||
+                        /(の|に|を|が|で|と|も)[^\s]{2,10}[る|う|た|い|だ]/.test(s) ||
+                        techTerms.some(term => s.includes(term))
+                    );
+                };
+
+                // 説明文をフィルタリング（縦型データ用に修正 - 構造を維持）
+                const filteredData = originalData
+                    .map(row => row 
+                        ? row.map(cell => {
+                            const strVal = cell != null ? String(cell).trim() : '';
+                            // 縦型データでは構造を維持するため、説明文や不要な項目も保持
+                            if (isDescription(strVal) || 
+                                ['給与区分', '扶養人数'].includes(strVal)) {
+                                return ''; // 空文字で置き換えるが行は維持
+                            }
+                            return cell;
+                        })
+                        : []
+                    )
+                    .filter(row => row && row.length > 0); // 空行のみ完全に削除
+                
+                console.log("Filtered data length:", filteredData.length);
+                console.log("Filtered data:", filteredData);
+
+                // 縦型データの構造: 各行が給与項目、各列が社員データ
+                // 例: [["社員番号", "001", "002"], ["氏名", "山田太郎", "鈴木花子"], ...]
+
+                // 重複項目のカテゴリマッピング情報を準備
+                const duplicateCategoryMap = {};
+                const duplicatePositionMap = {}; // 項目ごとの出現位置を追跡
+                if (currentState.duplicates) {
+                    for (const [item, numbers] of Object.entries(currentState.duplicates)) {
+                        duplicatePositionMap[item] = 0; // 各項目の出現カウンターを初期化
+                        numbers.forEach((number, idx) => {
+                            const duplicateKey = `${item}|${number}`;
+                            
+                            // confirmedItemsから検索
+                            for (const [category, items] of Object.entries(currentState.confirmedItems)) {
+                                if (items.includes(duplicateKey)) {
+                                    duplicateCategoryMap[duplicateKey] = category;
+                                    return;
+                                }
+                            }
+                            
+                            // checkboxStates.otherから再分類情報を検索
+                            if (currentState.checkboxStates.other && currentState.checkboxStates.other[duplicateKey] && 
+                                currentState.checkboxStates.other[duplicateKey] !== 'other') {
+                                duplicateCategoryMap[duplicateKey] = currentState.checkboxStates.other[duplicateKey];
+                            }
+                        });
+                    }
+                }
+
+                // 1列目に項目分類を追加（重複項目対応）
+                for (let i = 0; i < filteredData.length; i++) {
+                    const header = filteredData[i][0]; // 各行の最初の要素が項目名
+                    let categoryName = "";
+                    let foundCategory = null;
+                    
+                    // まずconfirmedItemsから検索
+                    for (const [category, items] of Object.entries(currentState.confirmedItems)) {
+                        if (items.includes(header)) {
+                            foundCategory = category;
+                            break;
+                        }
+                    }
+                    
+                    // confirmedItemsに見つからなかった場合、checkboxStates.otherから再分類情報を検索
+                    if (!foundCategory && currentState.checkboxStates.other) {
+                        for (const [otherItem, reclassifiedCategory] of Object.entries(currentState.checkboxStates.other)) {
+                            if (otherItem === header && reclassifiedCategory !== 'other') {
+                                foundCategory = reclassifiedCategory;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // 重複項目の場合、位置に基づいてカテゴリを割り当て
+                    if (!foundCategory && currentState.duplicates && currentState.duplicates[header]) {
+                        const itemNumbers = currentState.duplicates[header];
+                        // 正確な出現位置を使用
+                        const itemPosition = duplicatePositionMap[header]++;
+                        
+                        if (itemPosition >= 0 && itemPosition < itemNumbers.length) {
+                            const duplicateKey = `${header}|${itemNumbers[itemPosition]}`;
+                            foundCategory = duplicateCategoryMap[duplicateKey];
+                        }
+                    }
+                    
+                    if (foundCategory) {
+                        categoryName = getCategoryName(foundCategory);
+                    }
+                    filteredData[i].unshift(categoryName);
+                }
+                
+                console.log("Data with categories added:", filteredData);
+
+                // 「氏名」行の位置を特定
+                let nameRowIndex = -1;
+                for (let i = 0; i < filteredData.length; i++) {
+                    const rowHeader = filteredData[i][1]; // カテゴリ列を追加したので元のヘッダーは列1
+                    if (rowHeader && (rowHeader.toString().includes("氏名") || 
+                                      rowHeader.toString().includes("名前") || 
+                                      rowHeader.toString().includes("姓名"))) {
+                        nameRowIndex = i;
+                        break;
+                    }
+                }
+
+                if (nameRowIndex === -1) {
+                    // 氏名行が見つからない場合は適当な位置に追加
+                    nameRowIndex = 1;
+                }
+
+                // 氏名行の下に差分行を3行追加
+                // 最大列数を求めて差分行を作成（より堅牢な方法）
+                const maxColumns = Math.max(...filteredData.map(row => row.length));
+                console.log("Creating difference rows, max columns:", maxColumns);
+                const diffRows = [
+                    Array(maxColumns).fill("").map((_, index) => index === 0 ? "支給差分" : ""),
+                    Array(maxColumns).fill("").map((_, index) => index === 0 ? "控除差分" : ""),
+                    Array(maxColumns).fill("").map((_, index) => index === 0 ? "差引差分" : "")
+                ];
+                
+                // シートデータに差分行を挿入
+                filteredData.splice(nameRowIndex + 1, 0, ...diffRows);
+                console.log("Difference rows inserted at position:", nameRowIndex + 1);
+                console.log("Filtered data after insertion:", filteredData);
+                console.log("Data structure after diff rows:", JSON.stringify(filteredData, null, 2));
+
+                // 差分計算（縦型データ用）
+                // 各列（社員）ごとに計算（カテゴリ列追加後、データは列2から開始）
+                for (let col = 2; col <= maxColumns; col++) {
+                    let paymentSum = 0;
+                    let deductionSum = 0;
+                    let paymentTotal = 0;
+                    let deductionTotal = 0;
+                    let netPayment = 0;
+                    let paymentTotalRow = -1;
+                    let deductionTotalRow = -1;
+                    let netPaymentRow = -1;
+
+                    // 必須項目の行位置を特定（1列目の項目分類を参照）
+                    for (let row = 0; row < filteredData.length; row++) {
+                        const category = filteredData[row][0]; // 1列目の項目分類を参照
+                        const rowHeader = filteredData[row][1]; // 元のヘッダーは列1
+                        
+                        if (category === "支給計") {
+                            paymentTotalRow = row;
+                        } else if (category === "控除計") {
+                            deductionTotalRow = row;
+                        } else if (category === "差引支給額") {
+                            netPaymentRow = row;
+                        } else if (category === "支給") { // カテゴリ列で支給項目を確認
+                            paymentSum += toNumber(filteredData[row][col]);
+                        } else if (category === "控除") { // カテゴリ列で控除項目を確認
+                            deductionSum += toNumber(filteredData[row][col]);
+                        }
+                    }
+
+                    if (paymentTotalRow !== -1) paymentTotal = toNumber(filteredData[paymentTotalRow][col]);
+                    if (deductionTotalRow !== -1) deductionTotal = toNumber(filteredData[deductionTotalRow][col]);
+                    if (netPaymentRow !== -1) netPayment = toNumber(filteredData[netPaymentRow][col]);
+
+                    // 差分計算（要件通りに明確化）
+                    const paymentDiff = paymentSum - paymentTotal;  // 支給差分 = (支給項目和) - 支給計
+                    const deductionDiff = deductionSum - deductionTotal;  // 控除差分 = (控除項目和) - 控除計
+                    const netDiff = netPayment - (paymentTotal - deductionTotal);  // 差引差分 = 差引支給額 - (支給計 - 控除計)
+
+                    // 差分行に値を設定
+                    console.log(`Setting differences for col ${col}: payment=${paymentDiff}, deduction=${deductionDiff}, net=${netDiff}`);
+                    if (nameRowIndex + 1 < filteredData.length) filteredData[nameRowIndex + 1][col] = paymentDiff;
+                    if (nameRowIndex + 2 < filteredData.length) filteredData[nameRowIndex + 2][col] = deductionDiff;
+                    if (nameRowIndex + 3 < filteredData.length) filteredData[nameRowIndex + 3][col] = netDiff;
+                }
+
+                // 処理した縦型データを使用
+                sheetData.length = 0;
+                sheetData.push(...filteredData);
+                console.log("=== FINAL VERTICAL DATA PROCESSING COMPLETED ===");
+                console.log("Final processed vertical data with categories and differences:");
+                console.log(JSON.stringify(sheetData, null, 2));
+                console.log("Sheet data length:", sheetData.length);
+                
+                // 縦型データ処理完了、続いてExcelファイル生成処理を実行
+                
+                } catch (error) {
+                    console.error("=== VERTICAL PROCESSING ERROR CAUGHT ===");
+                    console.error("Error in vertical data processing:", error);
+                    console.error("Error stack:", error.stack);
+                    // エラーが発生した場合は横型データ処理にフォールバック
+                    console.log("Falling back to horizontal data processing due to error:", error.message);
+                    currentState.isVertical = false;
+                    
+                    // 横型データ処理を継続するために、元のデータを再取得
+                    const originalSheet = currentState.originalWorkbook.Sheets[currentState.originalWorkbook.SheetNames[0]];
+                    const horizontalData = XLSX.utils.sheet_to_json(originalSheet, {header: 1, defval: ""});
+                    
+                    // ヘッダー行に新しい列を追加
+                    const horizontalHeaderRow = horizontalData[0];
+                    const horizontalCategoryRow = new Array(horizontalHeaderRow.length).fill("");
+
+                    // 重複項目のカテゴリマッピング情報を準備
+                    const duplicateCategoryMap = {};
+                    const duplicatePositionMap = {}; // 項目ごとの出現位置を追跡
+                    if (currentState.duplicates) {
+                        for (const [item, numbers] of Object.entries(currentState.duplicates)) {
+                            duplicatePositionMap[item] = 0; // 各項目の出現カウンターを初期化
+                            numbers.forEach((number, idx) => {
+                                const duplicateKey = `${item}|${number}`;
+                                
+                                // confirmedItemsから検索
+                                for (const [category, items] of Object.entries(currentState.confirmedItems)) {
+                                    if (items.includes(duplicateKey)) {
+                                        duplicateCategoryMap[duplicateKey] = category;
+                                        return;
+                                    }
+                                }
+                                
+                                // checkboxStates.otherから再分類情報を検索
+                                if (currentState.checkboxStates.other && currentState.checkboxStates.other[duplicateKey] && 
+                                    currentState.checkboxStates.other[duplicateKey] !== 'other') {
+                                    duplicateCategoryMap[duplicateKey] = currentState.checkboxStates.other[duplicateKey];
+                                }
+                            });
+                        }
+                    }
+
+                    // 各項目のカテゴリをマッピング（重複項目と再分類情報も反映）
+                    horizontalHeaderRow.forEach((item, index) => {
+                        let foundCategory = null;
+                        
+                        // まずconfirmedItemsから検索
+                        for (const [category, items] of Object.entries(currentState.confirmedItems)) {
+                            if (items.includes(item)) {
+                                foundCategory = category;
+                                break;
+                            }
+                        }
+                        
+                        // confirmedItemsに見つからなかった場合、checkboxStates.otherから再分類情報を検索
+                        if (!foundCategory && currentState.checkboxStates.other) {
+                            for (const [otherItem, reclassifiedCategory] of Object.entries(currentState.checkboxStates.other)) {
+                                if (otherItem === item && reclassifiedCategory !== 'other') {
+                                    foundCategory = reclassifiedCategory;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        // 重複項目の場合、位置に基づいてカテゴリを割り当て
+                        if (!foundCategory && currentState.duplicates && currentState.duplicates[item]) {
+                            const itemNumbers = currentState.duplicates[item];
+                            // 正確な出現位置を使用
+                            const itemPosition = duplicatePositionMap[item]++;
+                            
+                            if (itemPosition >= 0 && itemPosition < itemNumbers.length) {
+                                const duplicateKey = `${item}|${itemNumbers[itemPosition]}`;
+                                foundCategory = duplicateCategoryMap[duplicateKey];
+                            }
+                        }
+                        
+                        if (foundCategory) {
+                            horizontalCategoryRow[index] = getCategoryName(foundCategory);
+                        }
+                    });
+
+                    // カテゴリ行をデータに挿入
+                    horizontalData.unshift(horizontalCategoryRow);
+                    
+                    // 処理したデータを使用
+                    sheetData.length = 0;
+                    sheetData.push(...horizontalData);
+                }
+
+            } else {
+            
+            // 「氏名」列の位置を確実に特定
+            let nameColIndex = headerRow.findIndex(col => {
+                const colStr = col.toString().trim();
+                return ["氏名", "名前", "姓名"].includes(colStr) ||
+       (colStr.includes("氏名") && !paymentKeywords.some(kw => colStr.includes(kw))) ||
+       (colStr.includes("名前") && !deductionKeywords.some(kw => colStr.includes(kw)));
+            });
+            
+            // 氏名列が見つからない場合は最初の給与項目の前に追加
+            if (nameColIndex === -1) {
+                const firstPaymentIndex = headerRow.findIndex(col => 
+                    paymentKeywords.some(kw => col.toString().includes(kw))
+                );
+                nameColIndex = firstPaymentIndex >= 0 ? firstPaymentIndex - 1 : headerRow.length;
+            }
+            
+            // 氏名列の右隣に差分列を挿入（カテゴリ行も更新）
+            headerRow.splice(nameColIndex + 1, 0, "支給差分", "控除差分", "差引差分");
+            categoryRow.splice(nameColIndex + 1, 0, "支給差分", "控除差分", "差引差分");
+
+            // データ行を3列右にずらして差分列を追加
+            for (let i = 2; i < sheetData.length; i++) {
+                const row = sheetData[i];
+                let paymentSum = 0;
+                let deductionSum = 0;
+                let paymentTotal = 0;
+                let deductionTotal = 0;
+                let netPayment = 0;
+
+                // 元の数値データを保持したまま3列右にずらす
+                if (nameColIndex >= 0) {
+                    // 氏名列の右に3列分のスペースを確保
+                    row.splice(nameColIndex + 1, 0, "", "", "");
+                    
+                    // 横型データ用計算ロジック（行単位で計算）
+                    let paymentItems = [];
+                    let deductionItems = [];
+                    
+                    // 列情報を事前収集（あいまい検索で列位置特定）
+                    const headerRow = sheetData[0];
+                    paymentItems = [];
+                    deductionItems = [];
+                    
+                    headerRow.forEach((cell, colIndex) => {
+                        if (colIndex <= nameColIndex) return;
+                        const cellValue = String(cell).trim();
+                        
+                        // 支給項目（"支給"カテゴリ）
+                        if (cellValue === "支給") {
+                            paymentItems.push(colIndex);
+                        }
+                        // 控除項目（"控除"カテゴリ）
+                        else if (cellValue === "控除") {
+                            deductionItems.push(colIndex);
+                        }
+                        // 支給計（あいまい検索）
+                        else if (cellValue.includes("支給計") || 
+                                 cellValue.includes("支給合計") || 
+                                 cellValue.includes("支給総額")) {
+                            paymentTotalCol = colIndex;
+                        }
+                        // 控除計（あいまい検索）
+                        else if (cellValue.includes("控除計") || 
+                                 cellValue.includes("控除合計") || 
+                                 cellValue.includes("控除総額")) {
+                            deductionTotalCol = colIndex;
+                        }
+                        // 差引支給額（あいまい検索）
+                        else if (cellValue.includes("差引支給額") || 
+                                 cellValue.includes("差引額") || 
+                                 cellValue.includes("支給差引額")) {
+                            netPaymentCol = colIndex;
+                        }
+                    });
+
+                    // 必須列の存在チェック
+                    if (paymentTotalCol === undefined || deductionTotalCol === undefined || netPaymentCol === undefined) {
+                        console.error("必要な列が見つかりませんでした");
+                        console.log("支給計列:", paymentTotalCol, "控除計列:", deductionTotalCol, "差引支給額列:", netPaymentCol);
+                    }
+
+                    
+
+                    // 値の取得と計算（配列形式対応）
+                    paymentSum = paymentItems.reduce((sum, colIndex) => {
+                        const value = toNumber(row[colIndex]);
+                        console.log(`支給項目[${colIndex}]:`, row[colIndex], '→', value);
+                        return sum + value;
+                    }, 0);
+
+                    deductionSum = deductionItems.reduce((sum, colIndex) => {
+                        const value = toNumber(row[colIndex]);
+                        console.log(`控除項目[${colIndex}]:`, row[colIndex], '→', value);
+                        return sum + value;
+                    }, 0);
+
+                    paymentTotal = toNumber(row[paymentTotalCol]);
+                    deductionTotal = toNumber(row[deductionTotalCol]);
+                    netPayment = toNumber(row[netPaymentCol]);
+
+                    console.log('計算基準値:', {
+                        支給合計: paymentTotal,
+                        控除合計: deductionTotal,
+                        差引支給額: netPayment
+                    });
+
+                    // 差分計算（要件通りに明確化）
+                    const paymentDiff = paymentSum - paymentTotal;  // 支給差分 = (支給項目和) - 支給計
+                    const deductionDiff = deductionSum - deductionTotal;  // 控除差分 = (控除項目和) - 控除計
+                    const netDiff = netPayment - (paymentTotal - deductionTotal);  // 差引差分 = 差引支給額 - (支給計 - 控除計)
+                    
+                    console.log("計算確認:", {
+                        支給項目和: paymentSum,
+                        支給計: paymentTotal,
+                        支給差分: paymentDiff,
+                        控除項目和: deductionSum, 
+                        控除計: deductionTotal,
+                        控除差分: deductionDiff,
+                        差引支給額: netPayment,
+                        差引差分: netDiff
+                    });
+
+                    // 差分列を更新
+                    row[nameColIndex + 1] = paymentDiff;
+                    row[nameColIndex + 2] = deductionDiff;
+                    row[nameColIndex + 3] = netDiff;
+                }
+            }
+            }
+
+            // 新しいシートを作成
+            console.log("Creating Excel sheet with data:", sheetData);
+            const newSheet = XLSX.utils.aoa_to_sheet(sheetData);
+            XLSX.utils.book_append_sheet(workbook, newSheet, "Sheet1");
+
+            // Excelファイルを生成
+            const excelBinary = XLSX.write(workbook, {
+                bookType: 'xlsx',
+                type: 'array'
+            });
+
+            // ダウンロード
+            console.log("Downloading Excel file");
+            const blob = new Blob([excelBinary], {type: 'application/octet-stream'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = '給与明細_差分確認.xlsx';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            console.log("Excel download completed");
+            } catch (error) {
+                console.error("Error in downloadExcel function:", error);
+                alert('エラー: Excelファイルの生成中にエラーが発生しました: ' + error.message);
+            }
+        }
+    </script>
+</body>
+</html>
