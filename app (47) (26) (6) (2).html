@@ -423,7 +423,7 @@ const paymentTerms = ['基本給', '手当', '役職手当', '調整給', '特�
                         found = true;
                     }
                     // Then check other priority categories
-                    const priorityCategories = ['paymentTotal', 'deductionTotal', 'netPayment', 'socialInsurance', 'employmentInsurance', 'taxable'];
+                    const priorityCategories = ['employeeNumber', 'name', 'paymentTotal', 'deductionTotal', 'netPayment', 'socialInsurance', 'employmentInsurance', 'taxable'];
                     for (let category of priorityCategories) {
                         if (categories[category].some(keyword => {
                             const isMatch = (typeof item === 'string' ? item.trim() : String(item)) === keyword.trim() || 
@@ -889,7 +889,24 @@ function isUncheckedInOtherCategories(item) {
         `;
     }).join('');
 } else {
-    checkboxesHTML = items.map(item => {
+    // 重複を除去するためのマップ
+    const uniqueItems = new Map();
+    
+    items.forEach(item => {
+        // 正規化したキーで重複をチェック
+        const normalizedKey = item
+            .replace(/[ＮＯ]/g, 'NO')  // 全角NOを半角に統一
+            .replace(/[社員名|従業員名|職員名|スタッフ名]/g, '氏名')  // 各種名を氏名に統一
+            .replace(/[社員コード|スタッフコード|社員ID|従業員番号|職員番号|個人コード|スタッフ番号|勤務者番号|ユーザー番号]/g, '社員番号');  // 各種番号を社員番号に統一
+        
+        // まだ同じ正規化キーの項目がない場合のみ追加
+        if (!uniqueItems.has(normalizedKey)) {
+            uniqueItems.set(normalizedKey, item);
+        }
+    });
+    
+    // 重複除去後の項目で表示
+    checkboxesHTML = Array.from(uniqueItems.values()).map(item => {
         // 社員番号と氏名カテゴリは重複項目も表示する
         if (currentState.duplicates[item] && !['employeeNumber', 'name'].includes(category)) return '';
         const isDetailItem = /^[（(][^）)\s][^）)]*[）)]$/.test(item);
